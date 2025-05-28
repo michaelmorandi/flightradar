@@ -8,12 +8,12 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import _ from 'lodash';
+import { truncate } from '@/utils/string';
 
 const props = defineProps(['label', 'text', 'imageUrl']);
 
 const textTruncated = computed(() => {
-  return _.truncate(props.text, { length: 42 });
+  return truncate(props.text, 42);
 });
 </script>
 

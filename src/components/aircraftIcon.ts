@@ -1,10 +1,9 @@
 import { toValue } from 'vue';
-import _ from 'lodash';
 
 export function silhouetteUrl(icaoTypeCode: string): string {
   const typeCode = toValue(icaoTypeCode);
 
-  if (_.isEmpty(icaoTypeCode)) {
+  if (!icaoTypeCode || icaoTypeCode.length === 0) {
     return '';
   } else {
     return `/silhouettes/${typeCode.toLowerCase()}.png`;

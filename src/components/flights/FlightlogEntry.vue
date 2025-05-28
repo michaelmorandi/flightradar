@@ -19,7 +19,7 @@ import { Aircraft, Flight } from '@/model/backendModel';
 import { FlightRadarService } from '@/services/flightRadarService';
 import { silhouetteUrl } from '@/components/aircraftIcon';
 import { computed, inject, onMounted, ref, PropType } from 'vue';
-import _ from 'lodash';
+import { truncate } from '@/utils/string';
 import { differenceInMinutes, differenceInHours, startOfDay, format } from 'date-fns';
 
 const props = defineProps({
@@ -88,11 +88,11 @@ const isLive = computed(() => {
 });
 
 const aircaftOperatorTruncated = computed(() => {
-  return _.truncate(aircraft.value.op, { length: 28 });
+  return truncate(aircraft.value.op, 28);
 });
 
 const aircaftTypeTruncated = computed(() => {
-  return _.truncate(aircraft.value.type, { length: 37 });
+  return truncate(aircraft.value.type, 37);
 });
 </script>
 

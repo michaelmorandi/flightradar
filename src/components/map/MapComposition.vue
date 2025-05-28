@@ -7,7 +7,6 @@ import { inject, onBeforeMount, onBeforeUnmount, ref, watch } from 'vue';
 import { TerrestialPosition } from '@/model/backendModel';
 import { FlightRadarService } from '@/services/flightRadarService';
 import { useFlightStore, usePositionStore, useMapStore, useWebSocketStore } from '@/stores';
-import _ from 'lodash';
 import MapComponent from './MapComponent.vue';
 import { MarkerManager } from './MarkerManager';
 import { FlightPathManager } from './FlightPathManager';

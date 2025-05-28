@@ -6,7 +6,6 @@ import { FlightRadarService } from './flightRadarService';
 import { Observable, from, BehaviorSubject, ReplaySubject, of } from 'rxjs';
 import { map, catchError, finalize } from 'rxjs/operators';
 
-import _ from 'lodash';
 
 export class FlightRadarServiceImpl implements FlightRadarService {
   private static readonly HEXDB_API_BASEPATH = 'https://hexdb.io/api/v1/';
@@ -59,7 +58,7 @@ export class FlightRadarServiceImpl implements FlightRadarService {
     const urlWithParams: string =
       filter == null ? `${this.apiBasepath}/flights?limit=${numEntries}` : `${this.apiBasepath}/flights?limit=${numEntries}&filter=${filter}`;
 
-    return from(this.axios.get(urlWithParams, _.assign({}, this.oneSecondCacheConfig, this.authConfig))).pipe(
+    return from(this.axios.get(urlWithParams, { ...this.oneSecondCacheConfig, ...this.authConfig })).pipe(
       map((res) => {
         if (this.is2xx(res)) return res.data;
         else throw new Error(res.statusText || 'Error retrieving flights');
@@ -72,7 +71,7 @@ export class FlightRadarServiceImpl implements FlightRadarService {
   }
 
   public getFlight(id: string): Observable<Flight> {
-    return from(this.axios.get(`${this.apiBasepath}/flights/${id}`, _.assign({}, this.oneSecondCacheConfig, this.authConfig))).pipe(
+    return from(this.axios.get(`${this.apiBasepath}/flights/${id}`, { ...this.oneSecondCacheConfig, ...this.authConfig })).pipe(
       map((res) => {
         if (this.is2xx(res)) return res.data;
         else throw new Error(res.statusText || 'Error retrieving flight details');
@@ -85,7 +84,7 @@ export class FlightRadarServiceImpl implements FlightRadarService {
   }
 
   public getAircraft(icaoHexAddr: string): Observable<Aircraft> {
-    return from(this.axios.get(`${this.apiBasepath}/aircraft/${icaoHexAddr}`, _.assign({}, this.oneHourCacheConfig, this.authConfig))).pipe(
+    return from(this.axios.get(`${this.apiBasepath}/aircraft/${icaoHexAddr}`, { ...this.oneHourCacheConfig, ...this.authConfig })).pipe(
       map((res) => {
         if (this.is2xx(res)) return res.data;
         else throw new Error(res.statusText || 'Error retrieving aircraft details');
@@ -261,7 +260,7 @@ export class FlightRadarServiceImpl implements FlightRadarService {
               Object.entries<TerrestialPosition>(data.positions).forEach(([id, pos]) => {
                 const position = pos;
                 if (position.track !== undefined) {
-                  position.track = _.round(position.track);
+                  position.track = Math.round(position.track);
                 }
                 this.positionsData.set(id, { ...position, lastUpdate: now });
               });
@@ -289,7 +288,7 @@ export class FlightRadarServiceImpl implements FlightRadarService {
 
                   // Round track if it exists
                   if (updatedPosition.track !== undefined) {
-                    updatedPosition.track = _.round(updatedPosition.track);
+                    updatedPosition.track = Math.round(updatedPosition.track);
                   }
 
                   this.positionsData.set(id, { ...updatedPosition, lastUpdate: now });
@@ -297,7 +296,7 @@ export class FlightRadarServiceImpl implements FlightRadarService {
                   // New position that wasn't in our data before
                   const position = pos as TerrestialPosition;
                   if (position.track !== undefined) {
-                    position.track = _.round(position.track);
+                    position.track = Math.round(position.track);
                   }
                   this.positionsData.set(id, { ...position, lastUpdate: now });
                 }
@@ -367,7 +366,7 @@ export class FlightRadarServiceImpl implements FlightRadarService {
   }
 
   public getPositions(flightid: string): Observable<Array<TerrestialPosition>> {
-    return from(this.axios.get(`${this.apiBasepath}/flights/${flightid}/positions`, _.assign({}, this.noCacheConfig, this.authConfig))).pipe(
+    return from(this.axios.get(`${this.apiBasepath}/flights/${flightid}/positions`, { ...this.noCacheConfig, ...this.authConfig })).pipe(
       map((res) => {
         if (this.is2xx(res)) {
           return res.data.map((arr: Array<number>) => {
