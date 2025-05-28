@@ -1,5 +1,5 @@
 <template>
-  <MapComponent :apikey="props.apikey || ''" :lat="props.lat || ''" :lng="props.lng || ''" @map-initialized="onMapInitialized" @map-click="onMapClick" />
+  <MapComponent :apikey="props.apikey || ''" :lat="props.lat || ''" :lng="props.lng || ''" @map-initialized="onMapInitialized" />
 </template>
 
 <script setup lang="ts">
