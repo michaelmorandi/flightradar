@@ -29,7 +29,7 @@
 <script setup lang="ts">
 import FlightDetail from '@/components/flights/FlightDetail.vue';
 import MapComposition from '@/components/map/MapComposition.vue';
-import { Configuration } from '@/config';
+import { config } from '@/config';
 import { Offcanvas } from 'bootstrap';
 import { ref, onMounted } from 'vue';
 
@@ -38,7 +38,7 @@ const sidebar = ref();
 
 const mapComponent = ref();
 
-const apiKey = Configuration.value('hereApiKey');
+const apiKey = config.hereApiKey;
 
 const isMobile = ref();
 

@@ -5,13 +5,13 @@ import router from './router';
 import { FlightRadarService } from './services/flightRadarService';
 import { FlightRadarServiceImpl } from './services/flightRadarServiceImpl';
 import { FlightRadarServiceMock } from './services/flightRadarServiceMock';
-import { Configuration } from './config';
+import { isMockDataEnabled } from './config';
 
 // Choose the appropriate service implementation based on configuration
 let baseService: FlightRadarService;
 
 // Choose the appropriate service implementation
-if (Configuration.isMockData()) {
+if (isMockDataEnabled()) {
   // Using mock data mode
   baseService = new FlightRadarServiceMock();
 } else {

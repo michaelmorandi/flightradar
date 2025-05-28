@@ -21,12 +21,12 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { Configuration } from '@/config';
+import { config } from '@/config';
 import { Offcanvas } from 'bootstrap';
 import MapComposition from '@/components/map/MapComposition.vue';
 import FlightDetail from '@/components/flights/FlightDetail.vue';
 
-const apiKey = Configuration.value('hereApiKey');
+const apiKey = config.hereApiKey;
 
 //Reference to the sidebar HTML div
 const sidebar = ref();

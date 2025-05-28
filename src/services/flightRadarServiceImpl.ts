@@ -1,7 +1,7 @@
 import Axios, { AxiosResponse, AxiosRequestConfig } from 'axios';
 import { CacheRequestConfig, setupCache, AxiosCacheInstance } from 'axios-cache-interceptor';
 import { Flight, Aircraft, TerrestialPosition } from '@/model/backendModel';
-import { Configuration } from '@/config';
+import { config } from '@/config';
 import { FlightRadarService } from './flightRadarService';
 import { Observable, from, BehaviorSubject, ReplaySubject, of } from 'rxjs';
 import { map, catchError, finalize } from 'rxjs/operators';
@@ -29,11 +29,11 @@ export class FlightRadarServiceImpl implements FlightRadarService {
     const instance = Axios.create();
     this.axios = setupCache(instance);
 
-    this.authConfig = Configuration.value('flightApiUser')
+    this.authConfig = config.flightApiUser
       ? ({
           auth: {
-            username: Configuration.value('flightApiUser'),
-            password: Configuration.value('flightApiPassword'),
+            username: config.flightApiUser,
+            password: config.flightApiPassword,
           },
         } as AxiosRequestConfig)
       : {};
@@ -52,13 +52,7 @@ export class FlightRadarServiceImpl implements FlightRadarService {
       },
     };
 
-    const basePath = Configuration.value('flightApiUrl');
-
-    if (basePath) {
-      this.apiBasepath = basePath;
-    } else {
-      throw 'Flight API URL not defined';
-    }
+    this.apiBasepath = config.flightApiUrl;
   }
 
   public getFlights(numEntries: number, filter?: string): Observable<Array<Flight>> {
@@ -202,7 +196,7 @@ export class FlightRadarServiceImpl implements FlightRadarService {
     this.positionsWebSocket = new WebSocket(finalWsUrl);
 
     this.positionsWebSocket.onopen = () => {
-      console.log('WebSocket connection established');
+      console.debug('WebSocket connection established');
     };
 
     this.positionsWebSocket.onerror = (error) => {
@@ -411,7 +405,7 @@ export class FlightRadarServiceImpl implements FlightRadarService {
     const wsBaseUrl = this.getWebSocketBaseUrl();
     const wsUrl = `${wsBaseUrl}api/v1/ws/flights/${flightId}/positions`;
 
-    console.log(`Connecting to flight position WebSocket: ${wsUrl}`);
+    console.debug(`Connecting to flight position WebSocket: ${wsUrl}`);
 
     try {
       const ws = new WebSocket(wsUrl);
@@ -420,7 +414,7 @@ export class FlightRadarServiceImpl implements FlightRadarService {
       const flightPositions: TerrestialPosition[] = [];
 
       ws.onopen = () => {
-        console.log(`WebSocket connection established for flight ${flightId}`);
+        console.debug(`WebSocket connection established for flight ${flightId}`);
       };
 
       ws.onmessage = (event) => {
@@ -452,7 +446,6 @@ export class FlightRadarServiceImpl implements FlightRadarService {
             }
           }
 
-          console.debug(`Received position data for flight ${flightId}:`, data);
         } catch (error) {
           console.error(`Error processing WebSocket message for flight ${flightId}:`, error);
         }
@@ -469,7 +462,7 @@ export class FlightRadarServiceImpl implements FlightRadarService {
         }
 
         if (event.code === 1000) {
-          console.log(`WebSocket connection closed for flight ${flightId}: ${event.reason}`);
+          console.debug(`WebSocket connection closed for flight ${flightId}: ${event.reason}`);
         } else {
           console.warn(`WebSocket connection for flight ${flightId} closed unexpectedly`);
           console.warn(event);
