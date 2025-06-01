@@ -17,7 +17,7 @@
         <DetailField label="Registraton" :text="aircraft ? aircraft.reg : null" />
       </div>
     </div>
-    <div class="row">
+    <div class="row" v-if="currentAltitude || currentGroundSpeed">
       <div class="col">
         <DetailField label="Current Altitude" :text="currentAltitude" />
       </div>
@@ -25,12 +25,12 @@
         <DetailField label="Ground Speed" :text="currentGroundSpeed" />
       </div>
     </div>
-    <div class="row" v-if="currentAltitude">
+    <div class="row" v-if="aircraft">
       <div class="col">
-        <DetailField :label="typeLabel" :text="aircraft ? aircraft.type : null" />
+        <DetailField :label="typeLabel" :text="aircraft ? aircraft.type : null" />       
       </div>
     </div>
-    <div class="row" v-if="currentGroundSpeed">
+    <div class="row" v-if="aircraft">
       <div class="col">
         <DetailField label="Operator" :text="aircraft ? aircraft.op : null" />
       </div>
