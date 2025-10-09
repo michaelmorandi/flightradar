@@ -425,11 +425,22 @@ export class FlightRadarServiceImpl implements FlightRadarService {
 
               callbacksSet.forEach((cb) => cb([...flightPositions]));
             }
-          } else if (data.type === 'update' && data.positions && data.positions[flightId]) {
-            const newPosition = data.positions[flightId];
-            if (newPosition) {
-              flightPositions.push(newPosition);
+          } else if (data.type === 'update') {
+            // Backend sends position data directly in the update message, not nested in positions
+            const newPosition: Partial<TerrestialPosition> = {
+              lat: data.lat,
+              lon: data.lon,
+              alt: data.alt
+            };
+            if (data.gs !== undefined) {
+              newPosition.gs = data.gs;
+            }
+            if (data.track !== undefined) {
+              newPosition.track = data.track;
+            }
 
+            if (newPosition.lat !== undefined && newPosition.lon !== undefined) {
+              flightPositions.push(newPosition as TerrestialPosition);
               callbacksSet.forEach((cb) => cb([...flightPositions]));
             }
           }
