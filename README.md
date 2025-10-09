@@ -115,8 +115,8 @@ docker run -d -p 8000:8000 --env-file .env flightradar-backend
 - `GET /api/v1/ready` - Readiness check
 
 ### Server-Sent Events (SSE)
-- `GET /api/v1/sse/positions/live` - Real-time position updates
-- `GET /api/v1/sse/flights/{flight_id}/positions` - Flight-specific updates
+- `GET /api/v1/positions/live/stream `- Real-time position updates
+- `GET /api/v1/flights/{flight_id}/positions/stream` - Flight-specific updates
 
 ### Interactive API Documentation
 - **Swagger UI**: http://localhost:8000/docs
