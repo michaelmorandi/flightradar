@@ -168,9 +168,9 @@ export class FlightRadarServiceMock implements FlightRadarService {
   }
 
   registerPositionsCallback(callback: (positions: Map<string, TerrestialPosition>) => void): void {
-    // Simulate WebSocket with a timer that sends position updates
+    // Simulate streaming connection with a timer that sends position updates
     if (this.wsIntervalId !== null || this.cleanupIntervalId !== null) {
-      this.disconnectPositionsWebSocket();
+      this.disconnectPositions();
     }
 
     // Clear existing positions
@@ -218,7 +218,13 @@ export class FlightRadarServiceMock implements FlightRadarService {
     }, 5000); // Check every 5 seconds
   }
 
-  disconnectPositionsWebSocket(): void {
+  connect(): EventSource {
+    // Mock implementation - return a fake EventSource
+    // This is just for compatibility with the interface
+    return {} as EventSource;
+  }
+
+  disconnectPositions(): void {
     if (this.wsIntervalId !== null) {
       window.clearInterval(this.wsIntervalId);
       this.wsIntervalId = null;
@@ -391,7 +397,7 @@ export class FlightRadarServiceMock implements FlightRadarService {
 
         const currentCallbacks = this.flightPositionsCallbacks.get(flightId);
         if (!currentCallbacks || currentCallbacks.size === 0) {
-          this.disconnectFlightPositionsWebSocket(flightId);
+          this.disconnectFlightPositions(flightId);
           return;
         }
 
@@ -427,7 +433,7 @@ export class FlightRadarServiceMock implements FlightRadarService {
 
   /**
    * Removes a specific callback for a flight's position updates.
-   * Only disconnects the WebSocket when no callbacks remain.
+   * Only disconnects the connection when no callbacks remain.
    * @param flightId The flight ID
    * @param callback The callback to remove (optional). If not provided, all callbacks will be removed.
    */
@@ -445,11 +451,11 @@ export class FlightRadarServiceMock implements FlightRadarService {
     }
 
     if (callbacks.size === 0) {
-      this.disconnectFlightPositionsWebSocket(flightId);
+      this.disconnectFlightPositions(flightId);
     }
   }
 
-  disconnectFlightPositionsWebSocket(flightId: string): void {
+  disconnectFlightPositions(flightId: string): void {
     this.flightPositionsCallbacks.delete(flightId);
 
     const intervalId = this.flightWsIntervals.get(flightId);

@@ -4,7 +4,7 @@ import { TerrestialPosition } from '@/model/backendModel';
 import { FlightRadarService } from '@/services/flightRadarService';
 import { usePositionStore } from './position';
 
-export interface WebSocketConnection {
+export interface StreamConnection {
   id: string;
   type: 'positions' | 'flight';
   status: 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -13,9 +13,9 @@ export interface WebSocketConnection {
   maxRetries: number;
 }
 
-export const useWebSocketStore = defineStore('websocket', () => {
+export const useConnectionStore = defineStore('connection', () => {
   // State
-  const connections = ref<Map<string, WebSocketConnection>>(new Map());
+  const connections = ref<Map<string, StreamConnection>>(new Map());
   const flightCallbacks = ref<Map<string, (positions: TerrestialPosition[]) => void>>(new Map());
   const positionsCallback = ref<((positions: Map<string, TerrestialPosition>) => void) | null>(null);
   const reconnectAttempts = ref<Map<string, number>>(new Map());
@@ -68,8 +68,8 @@ export const useWebSocketStore = defineStore('websocket', () => {
   });
 
   // Actions
-  const createConnection = (id: string, type: 'positions' | 'flight'): WebSocketConnection => {
-    const connection: WebSocketConnection = {
+  const createConnection = (id: string, type: 'positions' | 'flight'): StreamConnection => {
+    const connection: StreamConnection = {
       id,
       type,
       status: 'connecting',
@@ -83,8 +83,8 @@ export const useWebSocketStore = defineStore('websocket', () => {
   };
 
   const updateConnectionStatus = (
-    connectionId: string, 
-    status: WebSocketConnection['status'],
+    connectionId: string,
+    status: StreamConnection['status'],
     resetRetryCount = false
   ) => {
     const connection = connections.value.get(connectionId);
@@ -109,16 +109,16 @@ export const useWebSocketStore = defineStore('websocket', () => {
     return 0;
   };
 
-  const registerPositionsWebSocket = (
+  const registerPositionsConnection = (
     radarService: FlightRadarService,
     callback: (positions: Map<string, TerrestialPosition>) => void
   ) => {
     const connectionId = 'positions';
-    
+
     try {
       // Disconnect existing connection if any
       if (connections.value.has(connectionId)) {
-        disconnectPositionsWebSocket(radarService);
+        disconnectPositionsConnection(radarService);
       }
       
       createConnection(connectionId, 'positions');
@@ -140,48 +140,48 @@ export const useWebSocketStore = defineStore('websocket', () => {
       
       radarService.registerPositionsCallback(wrappedCallback);
       updateConnectionStatus(connectionId, 'connected', true);
-      
+
     } catch (error) {
-      console.error('Failed to register positions websocket:', error);
+      console.error('Failed to register positions connection:', error);
       updateConnectionStatus(connectionId, 'error');
-      
+
       // Auto-retry if enabled
       if (isAutoReconnectEnabled.value && incrementRetryCount(connectionId) <= maxRetryAttempts.value) {
         setTimeout(() => {
-          registerPositionsWebSocket(radarService, callback);
+          registerPositionsConnection(radarService, callback);
         }, retryDelay.value * Math.pow(2, reconnectAttempts.value.get(connectionId) || 1));
       }
     }
   };
 
-  const disconnectPositionsWebSocket = (radarService: FlightRadarService) => {
+  const disconnectPositionsConnection = (radarService: FlightRadarService) => {
     const connectionId = 'positions';
-    
+
     try {
-      radarService.disconnectPositionsWebSocket();
+      radarService.disconnectPositions();
       connections.value.delete(connectionId);
       positionsCallback.value = null;
       reconnectAttempts.value.delete(connectionId);
-      
+
       const positionStore = usePositionStore();
       positionStore.setConnectionStatus('disconnected');
-      
+
     } catch (error) {
-      console.error('Failed to disconnect positions websocket:', error);
+      console.error('Failed to disconnect positions connection:', error);
     }
   };
 
-  const registerFlightPositionsWebSocket = (
+  const registerFlightPositionsConnection = (
     radarService: FlightRadarService,
     flightId: string,
     callback: (positions: TerrestialPosition[]) => void
   ) => {
     const connectionId = `flight-${flightId}`;
-    
+
     try {
       // Disconnect existing connection for this flight if any
       if (connections.value.has(connectionId)) {
-        disconnectFlightPositionsWebSocket(radarService, flightId);
+        disconnectFlightPositionsConnection(radarService, flightId);
       }
       
       createConnection(connectionId, 'flight');
@@ -202,79 +202,79 @@ export const useWebSocketStore = defineStore('websocket', () => {
       
       radarService.registerFlightPositionsCallback(flightId, wrappedCallback);
       updateConnectionStatus(connectionId, 'connected', true);
-      
+
     } catch (error) {
-      console.error(`Failed to register flight positions websocket for ${flightId}:`, error);
+      console.error(`Failed to register flight positions connection for ${flightId}:`, error);
       updateConnectionStatus(connectionId, 'error');
       flightCallbacks.value.delete(flightId);
-      
+
       // Auto-retry if enabled
       if (isAutoReconnectEnabled.value && incrementRetryCount(connectionId) <= maxRetryAttempts.value) {
         setTimeout(() => {
-          registerFlightPositionsWebSocket(radarService, flightId, callback);
+          registerFlightPositionsConnection(radarService, flightId, callback);
         }, retryDelay.value * Math.pow(2, reconnectAttempts.value.get(connectionId) || 1));
       }
     }
   };
 
-  const disconnectFlightPositionsWebSocket = (radarService: FlightRadarService, flightId: string) => {
+  const disconnectFlightPositionsConnection = (radarService: FlightRadarService, flightId: string) => {
     const connectionId = `flight-${flightId}`;
-    
+
     try {
       if (connections.value.has(connectionId)) {
-        radarService.disconnectFlightPositionsWebSocket(flightId);
+        radarService.disconnectFlightPositions(flightId);
         connections.value.delete(connectionId);
         flightCallbacks.value.delete(flightId);
         reconnectAttempts.value.delete(connectionId);
       }
     } catch (error) {
-      console.error(`Failed to disconnect flight positions websocket for ${flightId}:`, error);
+      console.error(`Failed to disconnect flight positions connection for ${flightId}:`, error);
     }
   };
 
-  const disconnectAllWebSockets = (radarService: FlightRadarService) => {
+  const disconnectAllConnections = (radarService: FlightRadarService) => {
     try {
-      // Disconnect positions websocket
-      disconnectPositionsWebSocket(radarService);
-      
-      // Disconnect all flight websockets
+      // Disconnect positions stream
+      disconnectPositionsConnection(radarService);
+
+      // Disconnect all flight stream connections
       const flightIds = Array.from(flightCallbacks.value.keys());
       flightIds.forEach(flightId => {
-        disconnectFlightPositionsWebSocket(radarService, flightId);
+        disconnectFlightPositionsConnection(radarService, flightId);
       });
-      
+
       // Clear all state
       connections.value.clear();
       flightCallbacks.value.clear();
       reconnectAttempts.value.clear();
       positionsCallback.value = null;
-      
+
     } catch (error) {
-      console.error('Failed to disconnect all websockets:', error);
+      console.error('Failed to disconnect all connections:', error);
     }
   };
 
-  const reconnectWebSocket = (radarService: FlightRadarService, connectionId: string) => {
+  const reconnectConnection = (radarService: FlightRadarService, connectionId: string) => {
     const connection = connections.value.get(connectionId);
     if (!connection) return;
-    
+
     if (connection.type === 'positions' && positionsCallback.value) {
-      registerPositionsWebSocket(radarService, positionsCallback.value);
+      registerPositionsConnection(radarService, positionsCallback.value);
     } else if (connection.type === 'flight') {
       const flightId = connectionId.replace('flight-', '');
       const callback = flightCallbacks.value.get(flightId);
       if (callback) {
-        registerFlightPositionsWebSocket(radarService, flightId, callback);
+        registerFlightPositionsConnection(radarService, flightId, callback);
       }
     }
   };
 
-  const reconnectAllWebSockets = (radarService: FlightRadarService) => {
+  const reconnectAllConnections = (radarService: FlightRadarService) => {
     const connectionIds = Array.from(connections.value.keys());
     connectionIds.forEach(id => {
       const connection = connections.value.get(id);
       if (connection && connection.status !== 'connected') {
-        reconnectWebSocket(radarService, id);
+        reconnectConnection(radarService, id);
       }
     });
   };
@@ -329,14 +329,14 @@ export const useWebSocketStore = defineStore('websocket', () => {
     getConnectionStatus,
     getConnectionStats,
     
-    // Actions
-    registerPositionsWebSocket,
-    disconnectPositionsWebSocket,
-    registerFlightPositionsWebSocket,
-    disconnectFlightPositionsWebSocket,
-    disconnectAllWebSockets,
-    reconnectWebSocket,
-    reconnectAllWebSockets,
+    // Actions - Connection specific
+    registerPositionsConnection,
+    disconnectPositionsConnection,
+    registerFlightPositionsConnection,
+    disconnectFlightPositionsConnection,
+    disconnectAllConnections,
+    reconnectConnection,
+    reconnectAllConnections,
     updateConnectionStatus,
     setAutoReconnect,
     setMaxRetryAttempts,

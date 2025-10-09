@@ -8,14 +8,14 @@ export interface FlightRadarService {
 
   getAircraft(icaoHexAddr: string): Observable<Aircraft>;
 
-  // WebSocket methods for live position data
+  // Methods for live position data
   observePositions(): Observable<Map<string, TerrestialPosition>>;
-  disconnectPositionsWebSocket(): void;
+  disconnectPositions(): void;
 
   observeFlightPositions(flightId: string): Observable<Array<TerrestialPosition>>;
-  disconnectFlightPositionsWebSocket(flightId: string): void;
+  disconnectFlightPositions(flightId: string): void;
 
-  // Legacy callback methods for compatibility
+  // Callback methods
   registerPositionsCallback(callback: (positions: Map<string, TerrestialPosition>) => void): void;
   registerFlightPositionsCallback(flightId: string, callback: (positions: Array<TerrestialPosition>) => void): void;
   removeFlightPositionCallback(flightId: string, callback?: (positions: Array<TerrestialPosition>) => void): void;
@@ -27,4 +27,7 @@ export interface FlightRadarService {
   getPositions(flightId: string): Observable<Array<TerrestialPosition>>;
 
   getFlightRoute(callsign: string): Observable<string | null>;
+
+  // Connection method
+  connect(): EventSource;
 }

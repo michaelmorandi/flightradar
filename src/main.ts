@@ -16,9 +16,9 @@ if (isMockDataEnabled()) {
   baseService = new FlightRadarServiceMock();
 } else {
   // Using real API mode
-  const frServiceImpl = new FlightRadarServiceImpl();
-  frServiceImpl.connectWebsocket();
-  baseService = frServiceImpl;
+  const frService = new FlightRadarServiceImpl();
+  frService.connect();
+  baseService = frService;
 }
 
 // Wrap the base service with the adapter to ensure compatibility

@@ -2,8 +2,8 @@
 export { useFlightStore } from './flight';
 export { usePositionStore } from './position';
 export { useMapStore } from './map';
-export { useWebSocketStore } from './websocket';
+export { useConnectionStore } from './connection';
 
 // Type exports
 export type { MapCenter, MapViewport, MapConfiguration } from './map';
-export type { WebSocketConnection } from './websocket';
+export type { StreamConnection } from './connection';

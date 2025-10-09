@@ -1,7 +1,7 @@
 import { TerrestialPosition } from '@/model/backendModel';
 import { FlightPath } from '@/components/map/flightPath';
 import { FlightRadarService } from '@/services/flightRadarService';
-import { useFlightStore, useMapStore, useWebSocketStore } from '@/stores';
+import { useFlightStore, useMapStore, useConnectionStore } from '@/stores';
 import { MarkerManager } from './MarkerManager';
 import { AircraftIcon } from '@/components/map/aircraftElements';
 
@@ -11,7 +11,7 @@ export class FlightPathManager {
   private radarService: FlightRadarService;
   private flightStore: ReturnType<typeof useFlightStore>;
   private mapStore: ReturnType<typeof useMapStore>;
-  private webSocketStore: ReturnType<typeof useWebSocketStore>;
+  private connectionStore: ReturnType<typeof useConnectionStore>;
   private markerManager: MarkerManager;
   private onFlightSelectedCallback?: (flightId: string) => void;
 
@@ -20,14 +20,14 @@ export class FlightPathManager {
     radarService: FlightRadarService,
     flightStore: ReturnType<typeof useFlightStore>,
     mapStore: ReturnType<typeof useMapStore>,
-    webSocketStore: ReturnType<typeof useWebSocketStore>,
+    connectionStore: ReturnType<typeof useConnectionStore>,
     markerManager: MarkerManager
   ) {
     this.map = map;
     this.radarService = radarService;
     this.flightStore = flightStore;
     this.mapStore = mapStore;
-    this.webSocketStore = webSocketStore;
+    this.connectionStore = connectionStore;
     this.markerManager = markerManager;
   }
 
@@ -43,8 +43,8 @@ export class FlightPathManager {
     try {
       const previousFlight = this.selectedFlightPath;
       if (previousFlight && previousFlight.flightId !== flightId) {
-        if (this.webSocketStore.isFlightConnected(previousFlight.flightId)) {
-          this.webSocketStore.disconnectFlightPositionsWebSocket(this.radarService, previousFlight.flightId);
+        if (this.connectionStore.isFlightConnected(previousFlight.flightId)) {
+          this.connectionStore.disconnectFlightPositionsConnection(this.radarService, previousFlight.flightId);
         }
         
         if (this.markerManager.hasMarker(previousFlight.flightId)) {
@@ -70,7 +70,7 @@ export class FlightPathManager {
         }
       };
       
-      this.webSocketStore.registerFlightPositionsWebSocket(this.radarService, flightId, positionsCallback);
+      this.connectionStore.registerFlightPositionsConnection(this.radarService, flightId, positionsCallback);
       
       this.mapStore.highlightFlight(flightId);
       this.flightStore.selectFlight(flightId);
@@ -91,8 +91,8 @@ export class FlightPathManager {
           this.markerManager.setMarkerColor(flightId, AircraftIcon.INACTIVE_COLOR);
         }
         
-        if (this.webSocketStore.isFlightConnected(flightId)) {
-          this.webSocketStore.disconnectFlightPositionsWebSocket(this.radarService, flightId);
+        if (this.connectionStore.isFlightConnected(flightId)) {
+          this.connectionStore.disconnectFlightPositionsConnection(this.radarService, flightId);
         }
         
         this.mapStore.clearHighlight();
@@ -123,11 +123,11 @@ export class FlightPathManager {
 
     if (this.selectedFlightPath) {
       const flightId = this.selectedFlightPath.flightId;
-      
-      if (this.webSocketStore.isFlightConnected(flightId)) {
-        this.webSocketStore.disconnectFlightPositionsWebSocket(this.radarService, flightId);
+
+      if (this.connectionStore.isFlightConnected(flightId)) {
+        this.connectionStore.disconnectFlightPositionsConnection(this.radarService, flightId);
       }
-      
+
       const flightToRemove = this.selectedFlightPath;
       this.selectedFlightPath = null; // Clear the reference first to prevent recursive cleanup
       flightToRemove.removeFlightPath();
@@ -173,11 +173,11 @@ export class FlightPathManager {
   cleanup(): void {
     if (this.selectedFlightPath) {
       const flightId = this.selectedFlightPath.flightId;
-      
-      if (this.webSocketStore.isFlightConnected(flightId)) {
-        this.webSocketStore.disconnectFlightPositionsWebSocket(this.radarService, flightId);
+
+      if (this.connectionStore.isFlightConnected(flightId)) {
+        this.connectionStore.disconnectFlightPositionsConnection(this.radarService, flightId);
       }
-      
+
       this.selectedFlightPath.removeFlightPath();
       this.selectedFlightPath = null;
     }

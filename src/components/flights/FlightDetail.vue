@@ -54,7 +54,7 @@ const aircraft = ref<Aircraft>();
 const currentPosition = ref<TerrestialPosition | null>(null);
 const routeInfo = ref<string | null>(null);
 let positionUpdateInterval: number | null = null;
-// Track active WebSocket connection
+// Track active position stream
 let currentFlightId: string | null = null;
 
 const frService = inject('frService') as FlightRadarService;
@@ -72,8 +72,8 @@ const fetchRouteInfo = (callsign: string) => {
   });
 };
 
-// Set up WebSocket for position updates
-const setupPositionWebSocket = (flightId: string) => {
+// Set up position stream for updates
+const setupPositionStream = (flightId: string) => {
   frService.registerFlightPositionsCallback(flightId, (positions: Array<TerrestialPosition>) => {
     // Only update if this is still the selected flight
     if (props.flightId === flightId && positions && positions.length > 0) {
@@ -92,7 +92,7 @@ const updateCurrentPosition = () => {
   const requestedFlightId = props.flightId;
 
   try {
-    // First check if we have a live position from the main WebSocket
+    // First check if we have a live position from the main position stream
     const livePosition = frService.getCurrentPosition(requestedFlightId);
 
     // Only update if this is still the selected flight
@@ -129,9 +129,9 @@ watch(
     currentPosition.value = null;
     routeInfo.value = null;
 
-    // Disconnect any existing WebSocket
+    // Disconnect any existing position stream
     if (currentFlightId) {
-      frService.disconnectFlightPositionsWebSocket(currentFlightId);
+      frService.disconnectFlightPositions(currentFlightId);
       currentFlightId = null;
     }
 
@@ -156,9 +156,9 @@ watch(
               next: (aircraftData) => {
                 aircraft.value = aircraftData;
 
-                // Set up WebSocket for position updates
+                // Set up position stream for updates
                 currentFlightId = newValue;
-                setupPositionWebSocket(newValue);
+                setupPositionStream(newValue);
 
                 // Get the current position (might be available immediately)
                 updateCurrentPosition();
@@ -180,12 +180,12 @@ watch(
 );
 
 onMounted(() => {
-  // Get initial position data and set up WebSocket if needed
+  // Get initial position data and set up position stream if needed
   if (props.flightId) {
     updateCurrentPosition();
     if (!currentFlightId) {
       currentFlightId = props.flightId;
-      setupPositionWebSocket(props.flightId);
+      setupPositionStream(props.flightId);
     }
   }
 
@@ -204,9 +204,9 @@ onBeforeUnmount(() => {
     positionUpdateInterval = null;
   }
 
-  // Disconnect WebSocket
+  // Disconnect position stream
   if (currentFlightId) {
-    frService.disconnectFlightPositionsWebSocket(currentFlightId);
+    frService.disconnectFlightPositions(currentFlightId);
     currentFlightId = null;
   }
 });

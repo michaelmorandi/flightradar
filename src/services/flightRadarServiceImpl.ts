@@ -15,11 +15,11 @@ export class FlightRadarServiceImpl implements FlightRadarService {
   private noCacheConfig: CacheRequestConfig;
   private oneSecondCacheConfig: CacheRequestConfig;
   private oneHourCacheConfig: CacheRequestConfig;
-  private positionsWebSocket: WebSocket | null = null;
+  private positionsEventSource: EventSource | null = null;
   private positionsData: Map<string, TerrestialPosition & { lastUpdate: number }> = new Map();
   private positionsCleanupInterval: number | null = null;
 
-  private flightPositionsWebSockets: Map<string, WebSocket> = new Map();
+  private flightPositionsEventSources: Map<string, EventSource> = new Map();
   private flightPositionSubjects: Map<string, ReplaySubject<Array<TerrestialPosition>>> = new Map();
   private positionsSubject: BehaviorSubject<Map<string, TerrestialPosition>> | null = null;
   private flightPositionsCallbacks: Map<string, Set<(positions: Array<TerrestialPosition>) => void>> = new Map();
@@ -140,9 +140,9 @@ export class FlightRadarServiceImpl implements FlightRadarService {
   }
 
   public observePositions(): Observable<Map<string, TerrestialPosition>> {
-    // Ensure WebSocket is connected
-    if (!this.positionsWebSocket) {
-      this.connectWebsocket();
+    // Ensure connection is established
+    if (!this.positionsEventSource) {
+      this.connect();
     }
 
     // If subject doesn't exist, create one
@@ -170,13 +170,13 @@ export class FlightRadarServiceImpl implements FlightRadarService {
         }
       });
 
-      // When all subscribers unsubscribe, disconnect the WebSocket
+      // When all subscribers unsubscribe, disconnect the EventSource
       return subject.asObservable().pipe(
         finalize(() => {
           const subj = this.flightPositionSubjects.get(flightId);
           if (subj) {
             this.flightPositionSubjects.delete(flightId);
-            this.disconnectFlightPositionsWebSocket(flightId);
+            this.disconnectFlightPositions(flightId);
           }
         }),
       );
@@ -186,51 +186,44 @@ export class FlightRadarServiceImpl implements FlightRadarService {
     return this.flightPositionSubjects.get(flightId)!.asObservable();
   }
 
-  public connectWebsocket(): WebSocket {
-    const wsBaseUrl = this.getWebSocketBaseUrl();
+  public connect(): EventSource {
+    const url = this.getStreamUrl('positions/live/stream');
 
-    const finalWsUrl = wsBaseUrl + 'api/v1/ws/positions/live';
-    console.log('Connecting to WebSocket:', finalWsUrl);
+    this.positionsEventSource = new EventSource(url);
 
-    this.positionsWebSocket = new WebSocket(finalWsUrl);
-
-    this.positionsWebSocket.onopen = () => {
-      console.debug('WebSocket connection established');
+    this.positionsEventSource.onopen = () => {
+      console.debug('Position stream connection established');
     };
 
-    this.positionsWebSocket.onerror = (error) => {
-      this.handleWebSocketFailure(error);
+    this.positionsEventSource.onerror = (error) => {
+      this.handleConnectionFailure(error);
     };
 
-    this.positionsWebSocket.onclose = (event) => {
-      console.log(`WebSocket connection closed: ${event.code} ${event.reason}`);
-      this.positionsWebSocket = null;
-
-      // Clear any existing cleanup interval
-      if (this.positionsCleanupInterval !== null) {
-        window.clearInterval(this.positionsCleanupInterval);
-        this.positionsCleanupInterval = null;
+    this.positionsEventSource.addEventListener('positions', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        this.processPositionsData(data);
+      } catch (error) {
+        console.error('Error processing positions message:', error);
       }
+    });
 
-      // Log a warning if not intentionally closed
-      if (event.code !== 1000) {
-        // 1000 is normal closure
-        console.warn('WebSocket connection closed unexpectedly, WebSockets are required for position updates');
-      }
-    };
+    this.positionsEventSource.addEventListener('heartbeat', (event) => {
+      console.debug('Received heartbeat:', event.data);
+    });
 
-    return this.positionsWebSocket;
+    return this.positionsEventSource;
   }
 
   public registerPositionsCallback(callback: (positions: Map<string, TerrestialPosition>) => void): void {
-    if (!this.positionsWebSocket) {
-      console.warn('WebSocket not connected, attempting to reconnect...');
-      this.connectWebsocket();
+    if (!this.positionsEventSource) {
+      console.warn('Connection not established, attempting to connect...');
+      this.connect();
       
       // Give the connection a moment to establish
       setTimeout(() => {
-        if (!this.positionsWebSocket) {
-          throw new Error('WebSocket reconnection failed');
+        if (!this.positionsEventSource) {
+          throw new Error('Connection failed');
         }
         this.setupPositionsCallback(callback);
       }, 1000);
@@ -241,84 +234,12 @@ export class FlightRadarServiceImpl implements FlightRadarService {
   }
 
   private setupPositionsCallback(callback: (positions: Map<string, TerrestialPosition>) => void): void {
-    if (!this.positionsWebSocket) {
-      throw new Error('WebSocket not connected');
+    if (!this.positionsEventSource) {
+      throw new Error('Connection not established');
     }
 
-    try {
-      this.positionsWebSocket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          const now = Date.now();
-
-          if (data.positions) {
-            // For 'initial' type, replace all position data
-            if (data.type === 'initial') {
-              this.positionsData.clear();
-
-              // Process and store each position with timestamp
-              Object.entries<TerrestialPosition>(data.positions).forEach(([id, pos]) => {
-                const position = pos;
-                if (position.track !== undefined) {
-                  position.track = Math.round(position.track);
-                }
-                this.positionsData.set(id, { ...position, lastUpdate: now });
-              });
-            }
-            // For 'update' type, only update the specified positions
-            else if (data.type === 'update') {
-              Object.entries<Partial<TerrestialPosition>>(data.positions).forEach(([id, pos]) => {
-                const deltaPosition = pos;
-
-                // Handle both full and delta updates
-                if (this.positionsData.has(id)) {
-                  // Get existing data and merge with new data (delta update)
-                  const existingData = this.positionsData.get(id);
-                  if (!existingData) {
-                    // This should never happen due to the has() check
-                    return;
-                  }
-                  const { lastUpdate, ...existingPosition } = existingData;
-
-                  // Merge the existing position with the delta update
-                  const updatedPosition = {
-                    ...existingPosition,
-                    ...deltaPosition,
-                  } as TerrestialPosition;
-
-                  // Round track if it exists
-                  if (updatedPosition.track !== undefined) {
-                    updatedPosition.track = Math.round(updatedPosition.track);
-                  }
-
-                  this.positionsData.set(id, { ...updatedPosition, lastUpdate: now });
-                } else {
-                  // New position that wasn't in our data before
-                  const position = pos as TerrestialPosition;
-                  if (position.track !== undefined) {
-                    position.track = Math.round(position.track);
-                  }
-                  this.positionsData.set(id, { ...position, lastUpdate: now });
-                }
-              });
-            }
-
-            const result = new Map<string, TerrestialPosition>();
-            this.positionsData.forEach((value, key) => {
-              const { lastUpdate: _, ...position } = value;
-              result.set(key, position);
-            });
-
-            callback(result);
-          }
-        } catch (error) {
-          console.error('Error processing WebSocket message:', error);
-        }
-      };
-    } catch (error) {
-      console.error('Error setting up WebSocket:', error);
-      this.handleWebSocketFailure(error);
-    }
+    // Store callback for processing data
+    this.positionsCallback = callback;
 
     // Start cleanup interval to remove stale data
     if (this.positionsCleanupInterval === null) {
@@ -334,22 +255,90 @@ export class FlightRadarServiceImpl implements FlightRadarService {
           }
         });
 
-        if (hasRemovedData) {
+        if (hasRemovedData && this.positionsCallback) {
           const result = new Map<string, TerrestialPosition>();
           this.positionsData.forEach((value, key) => {
             const { lastUpdate: _, ...position } = value;
             result.set(key, position);
           });
-          callback(result);
+          this.positionsCallback(result);
         }
       }, 5000); // Check every 5 seconds
     }
   }
 
-  public disconnectPositionsWebSocket(): void {
-    if (this.positionsWebSocket) {
-      this.positionsWebSocket.close(1000);
-      this.positionsWebSocket = null;
+  private positionsCallback: ((positions: Map<string, TerrestialPosition>) => void) | null = null;
+
+  private processPositionsData(data: any): void {
+    if (!this.positionsCallback) return;
+    
+    const now = Date.now();
+
+    if (data.positions) {
+      // For 'initial' type, replace all position data
+      if (data.type === 'initial') {
+        this.positionsData.clear();
+
+        // Process and store each position with timestamp
+        Object.entries<TerrestialPosition>(data.positions).forEach(([id, pos]) => {
+          const position = pos;
+          if (position.track !== undefined) {
+            position.track = Math.round(position.track);
+          }
+          this.positionsData.set(id, { ...position, lastUpdate: now });
+        });
+      }
+      // For 'update' type, only update the specified positions
+      else if (data.type === 'update') {
+        Object.entries<Partial<TerrestialPosition>>(data.positions).forEach(([id, pos]) => {
+          const deltaPosition = pos;
+
+          // Handle both full and delta updates
+          if (this.positionsData.has(id)) {
+            // Get existing data and merge with new data (delta update)
+            const existingData = this.positionsData.get(id);
+            if (!existingData) {
+              return;
+            }
+            const { lastUpdate, ...existingPosition } = existingData;
+
+            // Merge the existing position with the delta update
+            const updatedPosition = {
+              ...existingPosition,
+              ...deltaPosition,
+            } as TerrestialPosition;
+
+            // Round track if it exists
+            if (updatedPosition.track !== undefined) {
+              updatedPosition.track = Math.round(updatedPosition.track);
+            }
+
+            this.positionsData.set(id, { ...updatedPosition, lastUpdate: now });
+          } else {
+            // New position that wasn't in our data before
+            const position = pos as TerrestialPosition;
+            if (position.track !== undefined) {
+              position.track = Math.round(position.track);
+            }
+            this.positionsData.set(id, { ...position, lastUpdate: now });
+          }
+        });
+      }
+
+      const result = new Map<string, TerrestialPosition>();
+      this.positionsData.forEach((value, key) => {
+        const { lastUpdate: _, ...position } = value;
+        result.set(key, position);
+      });
+
+      this.positionsCallback(result);
+    }
+  }
+
+  public disconnectPositions(): void {
+    if (this.positionsEventSource) {
+      this.positionsEventSource.close();
+      this.positionsEventSource = null;
     }
 
     if (this.positionsCleanupInterval !== null) {
@@ -358,6 +347,7 @@ export class FlightRadarServiceImpl implements FlightRadarService {
     }
 
     this.positionsData.clear();
+    this.positionsCallback = null;
 
     if (this.positionsSubject) {
       this.positionsSubject.complete();
@@ -397,32 +387,31 @@ export class FlightRadarServiceImpl implements FlightRadarService {
 
     callbacks.add(callback);
 
-    if (this.flightPositionsWebSockets.has(flightId)) {
+    if (this.flightPositionsEventSources.has(flightId)) {
       return;
     }
 
-    const wsBaseUrl = this.getWebSocketBaseUrl();
-    const wsUrl = `${wsBaseUrl}api/v1/ws/flights/${flightId}/positions`;
+    const url = this.getStreamUrl(`flights/${flightId}/positions/stream`);
 
-    console.debug(`Connecting to flight position WebSocket: ${wsUrl}`);
+    console.debug(`Connecting to flight position stream: ${url}`);
 
     try {
-      const ws = new WebSocket(wsUrl);
-      this.flightPositionsWebSockets.set(flightId, ws);
+      const eventSource = new EventSource(url);
+      this.flightPositionsEventSources.set(flightId, eventSource);
 
       const flightPositions: TerrestialPosition[] = [];
 
-      ws.onopen = () => {
-        console.debug(`WebSocket connection established for flight ${flightId}`);
+      eventSource.onopen = () => {
+        console.debug(`Position stream connection established for flight ${flightId}`);
       };
 
-      ws.onmessage = (event) => {
+      eventSource.addEventListener('flight_position', (event) => {
         try {
           const data = JSON.parse(event.data);
           const callbacksSet = this.flightPositionsCallbacks.get(flightId);
 
           if (!callbacksSet || callbacksSet.size === 0) {
-            this.disconnectFlightPositionsWebSocket(flightId);
+            this.disconnectFlightPositions(flightId);
             return;
           }
 
@@ -446,36 +435,28 @@ export class FlightRadarServiceImpl implements FlightRadarService {
           }
 
         } catch (error) {
-          console.error(`Error processing WebSocket message for flight ${flightId}:`, error);
+          console.error(`Error processing message for flight ${flightId}:`, error);
         }
+      });
+
+      eventSource.addEventListener('heartbeat', (event) => {
+        console.debug(`Received heartbeat for flight ${flightId}:`, event.data);
+      });
+
+      eventSource.onerror = (error) => {
+        console.error(`Connection error for flight ${flightId}:`, error);
+        this.handleConnectionFailure(error);
       };
 
-      ws.onerror = (error) => {
-        console.error(`WebSocket error for flight ${flightId}:`, error);
-        this.handleWebSocketFailure(error);
-      };
-
-      ws.onclose = (event) => {
-        if (this.flightPositionsWebSockets.get(flightId) === ws) {
-          this.flightPositionsWebSockets.delete(flightId);
-        }
-
-        if (event.code === 1000) {
-          console.debug(`WebSocket connection closed for flight ${flightId}: ${event.reason}`);
-        } else {
-          console.warn(`WebSocket connection for flight ${flightId} closed unexpectedly`);
-          console.warn(event);
-        }
-      };
     } catch (error) {
-      console.error(`Error setting up WebSocket for flight ${flightId}:`, error);
-      this.handleWebSocketFailure(error);
+      console.error(`Error setting up connection for flight ${flightId}:`, error);
+      this.handleConnectionFailure(error);
     }
   }
 
   /**
    * Removes a specific callback for a flight's position updates.
-   * Only disconnects the WebSocket when no callbacks remain.
+   * Only disconnects the EventSource when no callbacks remain.
    * @param flightId The flight ID
    * @param callback The callback to remove (optional). If not provided, all callbacks will be removed.
    */
@@ -494,29 +475,29 @@ export class FlightRadarServiceImpl implements FlightRadarService {
       callbacks.clear();
     }
 
-    // If no callbacks remain, disconnect the WebSocket
+    // If no callbacks remain, disconnect the EventSource
     if (callbacks.size === 0) {
-      this.disconnectFlightPositionsWebSocket(flightId);
+      this.disconnectFlightPositions(flightId);
     }
   }
 
   /**
-   * Disconnect the WebSocket for a specific flight.
+   * Disconnect the EventSource for a specific flight.
    * This is an internal method that should only be called when there are no more callbacks
    * or when we need to force the connection to close.
    */
-  public disconnectFlightPositionsWebSocket(flightId: string): void {
+  public disconnectFlightPositions(flightId: string): void {
     // Remove all callbacks
     this.flightPositionsCallbacks.delete(flightId);
 
-    const ws = this.flightPositionsWebSockets.get(flightId);
-    if (ws) {
+    const eventSource = this.flightPositionsEventSources.get(flightId);
+    if (eventSource) {
       try {
-        ws.close(1000);
+        eventSource.close();
       } catch (error) {
-        console.error(`Error closing WebSocket for flight ${flightId}:`, error);
+        console.error(`Error closing EventSource for flight ${flightId}:`, error);
       }
-      this.flightPositionsWebSockets.delete(flightId);
+      this.flightPositionsEventSources.delete(flightId);
     }
 
     // Complete and remove any subject for this flight
@@ -527,47 +508,30 @@ export class FlightRadarServiceImpl implements FlightRadarService {
     }
   }
 
-  private handleWebSocketFailure(error: unknown): void {
-    console.error('WebSocket error:', error);
-    console.warn('WebSocket connection failed. Please ensure your backend supports WebSockets.');
-    // No fallback to polling - WebSockets are required
+  private handleConnectionFailure(error: unknown): void {
+    console.error('Connection error:', error);
+    console.warn('Connection failed. Please ensure your backend supports streaming connections.');
   }
 
   private is2xx(result: AxiosResponse): boolean {
     return result.status >= 200 && result.status < 300;
   }
 
-  private getWebSocketBaseUrl(): string {
+  private getStreamUrl(path: string): string {
     // Get the API URL
     const apiBaseUrl = this.apiBasepath;
 
     // If apiBaseUrl is not defined properly, log an error
     if (!apiBaseUrl) {
-      throw new Error('Flight API URL not defined, WebSocket connection not established');
+      throw new Error('Flight API URL not defined, connection not established');
     }
 
-    // Ensure apiBaseUrl ends with a slash for proper URL parsing
+    // Ensure apiBaseUrl ends with a slash for proper URL construction
     const baseUrl = apiBaseUrl.endsWith('/') ? apiBaseUrl : `${apiBaseUrl}/`;
 
-    // Convert http(s):// to ws(s)://
-    // Split the URL into parts - this is more robust than URL parsing
-    let wsUrl = '';
+    // Construct the final URL
+    const finalUrl = `${baseUrl}${path}`;
 
-    if (baseUrl.startsWith('https://')) {
-      wsUrl = 'wss://' + baseUrl.substring(8);
-    } else if (baseUrl.startsWith('http://')) {
-      wsUrl = 'ws://' + baseUrl.substring(7);
-    } else {
-      // If the URL doesn't start with http(s), assume it's a relative URL
-      const isSecure = window.location.protocol === 'https:';
-      wsUrl = (isSecure ? 'wss://' : 'ws://') + window.location.host + '/' + baseUrl;
-    }
-
-    // Remove 'api/v1/' if present in the base URL as it will be added to the ws path
-    if (wsUrl.includes('api/v1/')) {
-      wsUrl = wsUrl.replace('api/v1/', '');
-    }
-
-    return wsUrl;
+    return finalUrl;
   }
 }

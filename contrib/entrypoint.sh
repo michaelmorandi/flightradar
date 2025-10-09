@@ -11,7 +11,7 @@ do
     cp $file $file.tmpl.js
   fi
 
-  envsubst '$VITE_APP_FLIGHT_API_URL,$VITE_APP_FLIGHT_API_USERNAME,$VITE_APP_FLIGHT_API_PASSWORD,$VITE_APP_HERE_API_KEY' < $file.tmpl.js > $file
+  envsubst '$VITE_FLIGHT_API_URL,$VITE_FLIGHT_API_USERNAME,$VITE_FLIGHT_API_PASSWORD,$VITE_HERE_API_KEY' < $file.tmpl.js > $file
 done
 
 echo "Starting Nginx"

@@ -6,7 +6,7 @@
 import { inject, onBeforeMount, onBeforeUnmount, ref, watch } from 'vue';
 import { TerrestialPosition } from '@/model/backendModel';
 import { FlightRadarService } from '@/services/flightRadarService';
-import { useFlightStore, usePositionStore, useMapStore, useWebSocketStore } from '@/stores';
+import { useFlightStore, usePositionStore, useMapStore, useConnectionStore } from '@/stores';
 import MapComponent from './MapComponent.vue';
 import { MarkerManager } from './MarkerManager';
 import { FlightPathManager } from './FlightPathManager';
@@ -16,7 +16,7 @@ const radarService = inject('frService') as FlightRadarService;
 const flightStore = useFlightStore();
 const positionStore = usePositionStore();
 const mapStore = useMapStore();
-const webSocketStore = useWebSocketStore();
+const connectionStore = useConnectionStore();
 
 const props = defineProps({
   apikey: String,
@@ -68,14 +68,14 @@ const onMapInitialized = ({ map: mapInstance }: { map: any; platform: any }) => 
   map = mapInstance;
 
   markerManager = new MarkerManager(map, positionStore);
-  flightPathManager = new FlightPathManager(map, radarService, flightStore, mapStore, webSocketStore, markerManager);
+  flightPathManager = new FlightPathManager(map, radarService, flightStore, mapStore, connectionStore, markerManager);
 
   markerManager.setOnMarkerClickCallback((flightId: string) => {
     flightPathManager.selectFlight(flightId);
     emit('onMarkerClicked', flightId);
   });
 
-  webSocketStore.registerPositionsWebSocket(radarService, (positions: Map<string, TerrestialPosition>) => {
+  connectionStore.registerPositionsConnection(radarService, (positions: Map<string, TerrestialPosition>) => {
     if (positions && markerManager) {
       markerManager.updateAircraftPositions(positions);
     }
@@ -85,7 +85,7 @@ const onMapInitialized = ({ map: mapInstance }: { map: any; platform: any }) => 
 
   if (props.peridicallyRefresh) {
     intervalId.value = setInterval(() => {
-      // Periodic refresh is handled by WebSocket connections
+      // Periodic refresh is handled by position streams
       // This interval can be used for other periodic tasks if needed
     }, mapStore.config.refreshInterval);
   } else {
@@ -97,7 +97,7 @@ const updateData = () => {
   if (mapStore.isAerialViewEnabled) {
     loadLivePositions();
   }
-  // Flight path updates are now handled by WebSocket connections
+  // Flight path updates are now handled by position streams
 };
 
 onBeforeUnmount(async () => {
@@ -110,7 +110,7 @@ onBeforeUnmount(async () => {
     markerManager.clearAllMarkers();
   }
 
-  webSocketStore.disconnectAllWebSockets(radarService);
+  connectionStore.disconnectAllConnections(radarService);
 
   mapStore.setInitialized(false);
 });
@@ -140,7 +140,7 @@ defineExpose({
   flightStore,
   positionStore,
   mapStore,
-  webSocketStore,
+  connectionStore,
   getMarkerManager: () => markerManager,
   getFlightPathManager: () => flightPathManager,
 });
