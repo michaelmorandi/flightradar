@@ -1,24 +1,27 @@
-from fastapi import Request, Query, HTTPException, Depends, WebSocket, WebSocketDisconnect
-from typing import List, Dict, Optional, Any
+from fastapi import Request, Query, HTTPException, Depends
+from fastapi.responses import StreamingResponse
+from typing import List, Dict, Optional, Any, AsyncGenerator
 from pydantic import BaseModel
 from pymongo.database import Database
 from bson import ObjectId
 import logging
-import threading
 import asyncio
+import json
+import uuid
 
 from .. import router
 from ..mappers import toFlightDto
 from ..models import FlightDto, to_datestring
-from ...websocket.manager import ConnectionManager
+from ...sse.manager import sse_manager, SSEClient
+from ...sse.notifier import SSENotifier
 from ..dependencies import MetaInfoDep, get_mongodb
 from ...scheduling import UPDATER_JOB_NAME
 
 # Initialize logging
 logger = logging.getLogger(__name__)
 
-# Create a WebSocket connection manager
-connection_manager = ConnectionManager()
+# Create SSE notifier
+sse_notifier = SSENotifier()
 
 # Constants
 MAX_FLIGHTS_LIMIT = 300
@@ -161,260 +164,228 @@ def get_flight(flight_id: str, mongodb: Database = Depends(get_mongodb)):
         raise HTTPException(status_code=400, detail=f"Invalid flight ID format: {str(e)}")
 
 
-@router.websocket('/ws/positions/live')
-async def websocket_all_positions(websocket: WebSocket):
-    """WebSocket endpoint for real-time position updates"""
-    # Get application state from the WebSocket scope
-    app = websocket.app
-
-    # Create a broadcast function for this specific WebSocket connection
-    def broadcast_positions(positions_dict):
-        """Function to broadcast positions to all connected clients"""
-        logger.debug(f"WebSocket callback triggered with {len(positions_dict)} positions")
-
-        # Use a thread for handling the async operation from a sync context
-        def run_in_thread(positions_data):                
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-            try:
-                # Run the coroutine in this thread's event loop
-                loop.run_until_complete(connection_manager.broadcast_positions(positions_data))
-            except Exception as e:
-                logger.error(f"Error in WebSocket broadcast thread: {str(e)}", exc_info=True)
-            finally:
-                loop.close()
-
-        # Start a dedicated thread for this broadcast
-        broadcast_thread = threading.Thread(
-            target=run_in_thread,
-            args=(positions_dict,),
-            daemon=True
-        )
-        broadcast_thread.start()
-
-    # Register the callback with the flight updater and store the reference
-    registered_callback = app.state.updater.register_websocket_callback(broadcast_positions)
+@router.get('/positions/live/stream')
+async def sse_all_positions(request: Request):
+    """SSE endpoint for real-time position updates"""
+    client_id = str(uuid.uuid4())
+    app = request.app
     
-    # Store the callback reference for later cleanup
-    callback_key = f"ws_live_callback_{id(websocket)}"
-    setattr(app.state, callback_key, registered_callback)
-    logger.info("WebSocket broadcast callback registered with updater")
+    async def event_stream() -> AsyncGenerator[str, None]:
+        # Create SSE client
+        queue = asyncio.Queue()
+        client = SSEClient(
+            id=client_id,
+            request=request,
+            queue=queue,
+            type="positions"
+        )
+        
+        # Add client to manager
+        sse_manager.add_client(client)
+        
+        # Create a broadcast function for position updates
+        async def broadcast_positions(positions_dict):
+            """Function to broadcast positions to SSE clients"""
+            logger.debug(f"SSE callback triggered with {len(positions_dict)} positions")
+            await sse_manager.broadcast_positions(positions_dict)
+        
+        # Register the callback with the flight updater
+        registered_callback = app.state.updater.register_sse_callback(broadcast_positions)
+        
+        try:
+            # Send initial positions immediately after connection
+            cached_flights = app.state.updater.get_cached_flights()
+            initial_positions = {str(k): v.__dict__ for k, v in cached_flights.items()}
 
-    # Accept the WebSocket connection
-    await connection_manager.connect(websocket)
-
-    try:
-        # Send initial positions immediately after connection
-        # For initial connection, we send all current positions with full data
-        cached_flights = app.state.updater.get_cached_flights()
-        initial_positions = {str(k): v.__dict__ for k, v in cached_flights.items()}
-
-        # Add a message type to indicate this is the initial full data set
-        message = {
-            "type": "initial",
-            "count": len(initial_positions),
-            "positions": initial_positions
+            # Send initial data
+            initial_message = {
+                "type": "initial",
+                "count": len(initial_positions),
+                "positions": initial_positions
+            }
+            
+            yield f"event: positions\ndata: {json.dumps(initial_message)}\n\n"
+            
+            # Process messages from queue
+            while True:
+                try:
+                    # Wait for messages with timeout to handle disconnections
+                    message = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    event_type = message.get("event", "message")
+                    data = message.get("data", {})
+                    
+                    yield f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+                except asyncio.TimeoutError:
+                    # Send heartbeat to keep connection alive
+                    timestamp = asyncio.get_event_loop().time()
+                    yield f"event: heartbeat\ndata: {{\"timestamp\": {timestamp}}}\n\n"
+                except Exception as e:
+                    logger.error(f"Error in SSE stream for client {client_id}: {str(e)}")
+                    break
+        
+        except Exception as e:
+            logger.error(f"Error in SSE positions stream: {str(e)}")
+        finally:
+            # Clean up
+            sse_manager.remove_client(client_id)
+            try:
+                app.state.updater.unregister_sse_callback(registered_callback)
+                logger.info("SSE broadcast callback unregistered")
+            except Exception as e:
+                logger.error(f"Error unregistering SSE callback: {str(e)}")
+    
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Cache-Control"
         }
-        await websocket.send_json(message)
-
-        # Keep the connection alive
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        # Handle client disconnect
-        connection_manager.disconnect(websocket)
-    except Exception as e:
-        logger.error(f"WebSocket error: {str(e)}")
-        connection_manager.disconnect(websocket)
-    finally:
-        # Clean up the callback when the connection is closed
-        callback_key = f"ws_live_callback_{id(websocket)}"
-        registered_callback = getattr(app.state, callback_key, None)
-        if registered_callback:
-            app.state.updater.unregister_websocket_callback(registered_callback)
-            setattr(app.state, callback_key, None)
-            logger.info("Live WebSocket broadcast callback unregistered")
+    )
 
 
-@router.websocket('/ws/flights/{flight_id}/positions')
-async def websocket_flight_positions(websocket: WebSocket, flight_id: str):
-    """WebSocket endpoint for real-time position updates for a specific flight"""
-
-    app = websocket.app
+@router.get('/flights/{flight_id}/positions/stream')
+async def sse_flight_positions(request: Request, flight_id: str):
+    """SSE endpoint for real-time position updates for a specific flight"""
+    client_id = str(uuid.uuid4())
+    app = request.app
     mongodb = app.state.mongodb
-
-    # Flight-specific connection manager
-    flight_connection_manager = ConnectionManager()
-
-    # Check if flight exists before accepting the connection
+    
+    # Check if flight exists
     try:
         flight = mongodb.flights.find_one({"_id": ObjectId(flight_id)})
         if not flight:
-            await flight_connection_manager.connect(websocket)
-            await websocket.close(code=1000, reason=f'Flight {flight_id} not found')
-            return
+            raise HTTPException(status_code=404, detail=f'Flight {flight_id} not found')
     except Exception as e:
         logger.error(f"Error checking flight {flight_id}: {str(e)}")
-        await websocket.close(code=1011, reason="Server error")
-        return
+        raise HTTPException(status_code=500, detail="Server error")
     
-    await flight_connection_manager.connect(websocket)
-
-    # Flag to track connection state
-    websocket_active = True
-    callback_registered = False
-    callback_key = f"ws_flight_callback_{flight_id}"
-    
-    try:
-        # Get the flight ID in ObjectId format
-        flight_oid = ObjectId(flight_id)
+    async def event_stream() -> AsyncGenerator[str, None]:
+        # Create SSE client
+        queue = asyncio.Queue()
+        client = SSEClient(
+            id=client_id,
+            request=request,
+            queue=queue,
+            type="flight",
+            flight_id=flight_id
+        )
         
-        # Fetch initial positions from mongodb for the given flight
-        positions = list(mongodb.positions.find({"flight_id": flight_oid}).sort("timestmp", 1))
+        # Add client to manager
+        sse_manager.add_client(client)
+        
+        registered_callback = None
         last_position = None
         
-        # Format all positions for the initial message
-        all_positions = []
-        
-        if positions:
-            for pos in positions:
-                position_data = {
-                    "lat": pos["lat"],
-                    "lon": pos["lon"],
-                    "alt": pos["alt"] if pos["alt"] is not None else -1
-                }
-                if pos.get("gs") is not None:
-                    position_data["gs"] = pos["gs"]
-                all_positions.append(position_data)
+        try:
+            # Get the flight ID in ObjectId format
+            flight_oid = ObjectId(flight_id)
             
-            # Save the most recent position for comparison with future updates
-            last_position = all_positions[-1] if all_positions else None
-        
-        # Create the initial message with all positions
-        initial_pos_message = {
-            "type": "initial",
-            "count": len(all_positions),
-            "positions": {flight_id: all_positions} if all_positions else {}
-        }
-
-        await websocket.send_json(initial_pos_message)
-        
-        # Function to check if websocket is still active
-        def is_websocket_active():
-            return websocket_active
-        
-        # Function to track position changes for a specific flight
-        def send_flight_position_updates(positions_dict):
-            """Callback function to send position updates for a specific flight"""
-            # First check if the WebSocket is still active
-            if not is_websocket_active():
-                return
-                
-            # Check if this update contains this flight
-            if flight_id not in positions_dict:
-                return
-                
-            # Get flight's new position
-            new_position = positions_dict[flight_id]
+            # Fetch initial positions from mongodb for the given flight
+            positions = list(mongodb.positions.find({"flight_id": flight_oid}).sort("timestmp", 1))
             
-            # Get a reference to the previous position
-            nonlocal last_position
+            # Format all positions for the initial message
+            all_positions = []
             
-            # Skip if there's no previous position yet
-            if last_position is None:
-                last_position = new_position
-                # Use thread-based approach for async operations from sync context
-                _send_update_in_thread(new_position)
-                return
+            if positions:
+                for pos in positions:
+                    position_data = {
+                        "lat": pos["lat"],
+                        "lon": pos["lon"],
+                        "alt": pos["alt"] if pos["alt"] is not None else -1
+                    }
+                    if pos.get("gs") is not None:
+                        position_data["gs"] = pos["gs"]
+                    all_positions.append(position_data)
+                
+                # Save the most recent position for comparison with future updates
+                last_position = all_positions[-1] if all_positions else None
             
-            # Only send update if position has changed
-            if (last_position["lat"] != new_position["lat"] or 
-                last_position["lon"] != new_position["lon"] or 
-                last_position["alt"] != new_position["alt"] or
-                last_position.get("gs") != new_position.get("gs")):
+            # Send initial positions
+            initial_message = {
+                "type": "initial",
+                "count": len(all_positions),
+                "positions": {flight_id: all_positions} if all_positions else {}
+            }
+            
+            yield f"event: flight_position\ndata: {json.dumps(initial_message)}\n\n"
+            
+            # Function to track position changes for a specific flight
+            async def send_flight_position_updates(positions_dict):
+                """Callback function to send position updates for a specific flight"""
+                nonlocal last_position
                 
-                # Update the last known position
-                last_position = new_position
+                # Check if this update contains this flight
+                if flight_id not in positions_dict:
+                    return
+                    
+                # Get flight's new position
+                new_position = positions_dict[flight_id]
                 
-                # Use thread-based approach for async operations from sync context
-                _send_update_in_thread(new_position)
-        
-        # Helper function to send updates through a separate thread with its own event loop
-        def _send_update_in_thread(position_data):
-            def run_in_thread(pos_data):
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                # Skip if there's no previous position yet
+                if last_position is None:
+                    last_position = new_position
+                    await sse_manager.send_flight_position(flight_id, new_position)
+                    return
+                
+                # Only send update if position has changed
+                if (last_position["lat"] != new_position["lat"] or 
+                    last_position["lon"] != new_position["lon"] or 
+                    last_position["alt"] != new_position["alt"] or
+                    last_position.get("gs") != new_position.get("gs")):
+                    
+                    # Update the last known position
+                    last_position = new_position
+                    
+                    # Send position update via SSE manager
+                    await sse_manager.send_flight_position(flight_id, new_position)
+            
+            # Register the callback with the flight updater
+            registered_callback = app.state.updater.register_sse_callback(send_flight_position_updates)
+            
+            logger.info(f"SSE callback registered for flight {flight_id}")
+            
+            # Process messages from queue
+            while True:
                 try:
-                    # Check if still active before running
-                    if is_websocket_active():
-                        loop.run_until_complete(send_update(pos_data))
+                    # Wait for messages with timeout to handle disconnections
+                    message = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    event_type = message.get("event", "message")
+                    data = message.get("data", {})
+                    
+                    yield f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+                except asyncio.TimeoutError:
+                    # Send heartbeat to keep connection alive
+                    timestamp = asyncio.get_event_loop().time()
+                    yield f"event: heartbeat\ndata: {{\"timestamp\": {timestamp}}}\n\n"
                 except Exception as e:
-                    logger.error(f"Error in flight WebSocket update thread: {str(e)}", exc_info=True)
-                finally:
-                    loop.close()
-            
-            # Start a dedicated thread for this update
-            broadcast_thread = threading.Thread(
-                target=run_in_thread,
-                args=(position_data,),
-                daemon=True
-            )
-            broadcast_thread.start()
+                    logger.error(f"Error in SSE flight stream for client {client_id}: {str(e)}")
+                    break
         
-        # Helper async function to send a single flight update
-        async def send_update(position_data):
-
-            if not is_websocket_active():
-                return
-                
-            try:
-                # Format the update message
-                update_message = {
-                    "type": "update",
-                    "count": 1,
-                    "positions": {flight_id: position_data}
-                }
-                # Send to this specific connection only
-                await websocket.send_json(update_message)
-                logger.debug(f"Sent position update for flight {flight_id}")
-            except Exception as e:
-                # If we get a closed websocket error, mark inactive
-                websocket_active = False
-                logger.error(f"Error sending flight position update: {str(e)}")
-        
-        # Register the callback with the flight updater and store the reference
-        registered_callback = app.state.updater.register_websocket_callback(send_flight_position_updates)
-        setattr(app.state, callback_key, registered_callback)
-        callback_registered = True
-        logger.info(f"WebSocket callback registered for flight {flight_id}")
-        
-        # Keep the connection alive
-        while True:
-            # Wait for client messages (ping/pong handled automatically)
-            await websocket.receive_text()
-
-    except WebSocketDisconnect:
-        logger.info(f"WebSocket for flight {flight_id} disconnected")
-        websocket_active = False
-        flight_connection_manager.disconnect(websocket)
-    except Exception as e:
-        logger.error(f"WebSocket error: {str(e)}")
-        websocket_active = False
-        flight_connection_manager.disconnect(websocket)
-    finally:
-        # Make sure to mark connection as inactive
-        websocket_active = False
-        
-        # Clean up callback if we registered one
-        if callback_registered:
-            # Get the callback reference
-            registered_callback = getattr(app.state, callback_key, None)
+        except Exception as e:
+            logger.error(f"Error in SSE flight positions stream: {str(e)}")
+        finally:
+            # Clean up
+            sse_manager.remove_client(client_id)
             if registered_callback:
-                # Properly unregister it from the updater
-                app.state.updater.unregister_websocket_callback(registered_callback)
-                setattr(app.state, callback_key, None)
-                logger.info(f"WebSocket callback for flight {flight_id} unregistered and deactivated")
+                try:
+                    app.state.updater.unregister_sse_callback(registered_callback)
+                    logger.info(f"SSE callback for flight {flight_id} unregistered")
+                except Exception as e:
+                    logger.error(f"Error unregistering SSE flight callback: {str(e)}")
+    
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Cache-Control"
+        }
+    )
 
 @router.get('/flights/{flight_id}/positions',
     summary="Get flight positions",

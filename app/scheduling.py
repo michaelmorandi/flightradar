@@ -7,6 +7,7 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 from .config import Config
 from .core.services.flight_updater_coordinator import FlightUpdaterCoordinator
 from .crawling.crawler import AirplaneCrawler
+from .sse.notifier import SSENotifier
 
 logger = logging.getLogger(__name__)
 

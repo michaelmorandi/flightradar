@@ -1,11 +1,22 @@
 import logging
-from typing import Any, Dict, Set, Callable
+from typing import Any, Dict, Set, Callable, Optional
+import asyncio
 
-logger = logging.getLogger('WebSocketNotifier')
+logger = logging.getLogger('SSENotifier')
 
-class WebSocketNotifier:
+
+class SSENotifier:
+    _main_loop: Optional[asyncio.AbstractEventLoop] = None
+
     def __init__(self):
         self._callbacks: Set[Callable] = set()
+        # Try to capture the main event loop on initialization
+        try:
+            if SSENotifier._main_loop is None:
+                SSENotifier._main_loop = asyncio.get_event_loop()
+                logger.info("Captured main event loop for SSE notifications")
+        except RuntimeError:
+            logger.warning("No event loop available during SSENotifier initialization")
         
     def register_callback(self, callback: Callable[[Dict[str, Any]], None]):
         """Register a callback function to notify when positions are updated"""
@@ -27,15 +38,41 @@ class WebSocketNotifier:
         """Notify all registered clients with position updates"""
         if not positions_dict or not self._callbacks:
             return
-        
+
+        logger.debug(f"Notifying {len(self._callbacks)} callbacks with {len(positions_dict)} positions")
+
         callbacks_to_remove = set()
         for callback in self._callbacks:
             try:
-                callback(positions_dict)
+                # Check if callback is async
+                if asyncio.iscoroutinefunction(callback):
+                    # Try to get the running loop first
+                    loop = None
+                    try:
+                        loop = asyncio.get_running_loop()
+                        logger.debug("Using currently running event loop")
+                    except RuntimeError:
+                        # No running loop in current thread - use the stored main loop
+                        if SSENotifier._main_loop is not None:
+                            loop = SSENotifier._main_loop
+                            logger.debug("Using stored main event loop")
+                        else:
+                            logger.error("No event loop available for async callback")
+                            continue
+
+                    # Schedule the coroutine in the event loop
+                    if loop is not None:
+                        try:
+                            future = asyncio.run_coroutine_threadsafe(callback(positions_dict), loop)
+                            logger.debug("Scheduled async callback successfully")
+                        except Exception as e:
+                            logger.error(f"Failed to schedule async callback: {str(e)}")
+                else:
+                    callback(positions_dict)
             except Exception as e:
-                logger.error(f"Error in WebSocket callback: {str(e)}")
+                logger.error(f"Error in SSE callback: {str(e)}", exc_info=True)
                 callbacks_to_remove.add(callback)
-        
+
         if callbacks_to_remove:
             self._callbacks.difference_update(callbacks_to_remove)
             

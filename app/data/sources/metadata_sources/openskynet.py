@@ -46,16 +46,24 @@ class OpenskyNet(AircraftMetadataSource):
             aircraft = response.json()
 
             if aircraft:
-                modeS = aircraft['icao24'].upper()
-                reg = aircraft['registration']
-                icao_type_code = aircraft['typecode']
-                op = aircraft['operator']
+                modeS = aircraft.get('icao24', '').upper()
+                reg = aircraft.get('registration')
+                icao_type_code = aircraft.get('typecode')
+                op = aircraft.get('operator')
+                model = aircraft.get('model')
+                manufacturer_name = aircraft.get('manufacturerName')
 
-                aircraft_type_description = (aircraft['model'] 
-                            if aircraft['model'].startswith(aircraft['manufacturerName']) 
-                            else  '{:s} {:s}'.format(aircraft['manufacturerName'], aircraft['model']) )
+                aircraft_type_description = None
+                if model and manufacturer_name:
+                    aircraft_type_description = (model
+                                if model.startswith(manufacturer_name)
+                                else  '{:s} {:s}'.format(manufacturer_name, model))
+                elif model:
+                    aircraft_type_description = model
+                elif manufacturer_name:
+                    aircraft_type_description = manufacturer_name
 
-                if modeS and reg and icao_type_code and aircraft['model']:
+                if modeS and reg and icao_type_code and model:
                     return Aircraft(modeS, reg=reg, icao_type_code=icao_type_code, aircraft_type_description=aircraft_type_description, operator=op, source=self.name())
 
         except HTTPError as http_err:

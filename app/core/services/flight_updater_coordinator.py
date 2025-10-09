@@ -8,7 +8,7 @@ from ...data.repositories.flight_repository import FlightRepository
 from .position_manager import PositionManager
 from ...data.repositories.position_repository import PositionRepository
 from ...data.repositories.mongodb_repository import MongoDBRepository
-from ...websocket.notifier import WebSocketNotifier
+from ...sse.notifier import SSENotifier
 from ...monitoring.performance_monitor import PerformanceMonitor
 from ..models.position_report import PositionReport
 from .incomplete_aircraft_manager import IncompleteAircraftManager
@@ -52,7 +52,7 @@ class FlightUpdaterCoordinator:
         self._position_manager = PositionManager(config)
         self._position_manager.initialize(self._position_repository)
         
-        self._websocket_notifier = WebSocketNotifier()
+        self._sse_notifier = SSENotifier()
         self._performance_monitor = PerformanceMonitor()
         
         self._unknown_aircraft_manager = IncompleteAircraftManager(config, mongodb)
@@ -71,13 +71,13 @@ class FlightUpdaterCoordinator:
         """Check if the radar service connection is alive"""
         return self._radar_service.connection_alive
         
-    def register_websocket_callback(self, callback: Callable[[Dict[str, Any]], None]):
-        """Register a callback for WebSocket notifications"""
-        return self._websocket_notifier.register_callback(callback)
-        
-    def unregister_websocket_callback(self, callback: Callable[[Dict[str, Any]], None]):
-        """Unregister a WebSocket callback"""
-        return self._websocket_notifier.unregister_callback(callback)
+    def register_sse_callback(self, callback: Callable[[Dict[str, Any]], None]):
+        """Register a callback for SSE notifications"""
+        return self._sse_notifier.register_callback(callback)
+
+    def unregister_sse_callback(self, callback: Callable[[Dict[str, Any]], None]):
+        """Unregister a SSE callback"""
+        return self._sse_notifier.unregister_callback(callback)
         
     def get_cached_flights(self) -> Dict[str, PositionReport]:
         """Get flights with recent positions"""
@@ -96,14 +96,19 @@ class FlightUpdaterCoordinator:
             return
 
         try:
+            import time
+            cycle_start = time.time()
+
             self.is_updating = True
             self._position_manager.clear_changes()
 
             self._performance_monitor.start_timer('main')
-            
+
             self._performance_monitor.start_timer('service')
             positions = self._radar_service.query_live_flights(False)
-            self._performance_monitor.stop_timer('service')
+            service_time = self._performance_monitor.stop_timer('service')
+
+            logger.debug(f"Radar service query took {service_time:.3f}s, received {len(positions) if positions else 0} positions")
                 
             if not positions:
                 return        
@@ -116,30 +121,32 @@ class FlightUpdaterCoordinator:
                 if not filtered_pos:
                     return
 
-                valid_positions = [p for p in filtered_pos if p.lat and p.lon]
+                valid_positions = [p for p in filtered_pos if p.lat and p.lon]                
 
-                
                 self._performance_monitor.start_timer('flight')
                 self._flight_manager.update_flights(filtered_pos)
-                self._performance_monitor.stop_timer('flight')
+                flight_time = self._performance_monitor.stop_timer('flight')
 
                 self._performance_monitor.start_timer('position')
                 self._position_manager.add_positions(valid_positions, self._flight_manager)
-                self._performance_monitor.stop_timer('position')
+                position_time = self._performance_monitor.stop_timer('position')
 
-                # Broadcast positions via WebSocket if needed
-                if (self._websocket_notifier.has_callbacks() and 
-                    self._position_manager.has_positions_changed() and 
-                    len(self._position_manager.get_changed_flight_ids()) > 0):
-                    
-                    self._performance_monitor.start_timer('websocket')
-                    
+                logger.debug(f"Processing {len(valid_positions)} valid positions. Update timings: flight={flight_time:.3f}s, position={position_time:.3f}s")
+
+                # Broadcast positions via SSE if needed
+                has_callbacks = self._sse_notifier.has_callbacks()
+                has_changes = self._position_manager.has_positions_changed()
+                changed_count = len(self._position_manager.get_changed_flight_ids())
+
+                logger.debug(f"SSE check: has_callbacks={has_callbacks}, has_changes={has_changes}, changed_count={changed_count}")
+
+                if (has_callbacks and has_changes and changed_count > 0):
+
                     all_cached_flights = self.get_cached_flights()
                     changed_flight_ids = self._position_manager.get_changed_flight_ids()
-                    
-                    self._websocket_notifier.notify_position_changes(all_cached_flights, changed_flight_ids)
-                        
-                    self._performance_monitor.stop_timer('websocket')
+
+                    logger.debug(f"Broadcasting {changed_count} changed positions to SSE clients")
+                    self._sse_notifier.notify_position_changes(all_cached_flights, changed_flight_ids)
 
             except (KeyboardInterrupt, SystemExit):
                 raise
