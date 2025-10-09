@@ -284,7 +284,10 @@ async def sse_flight_positions(request: Request, flight_id: str):
             flight_oid = ObjectId(flight_id)
             
             # Fetch initial positions from mongodb for the given flight
-            positions = list(mongodb.positions.find({"flight_id": flight_oid}).sort("timestmp", 1))
+            positions = list(mongodb.positions.find(
+                {"flight_id": flight_oid},
+                {"lat": 1, "lon": 1, "alt": 1, "gs": 1, "_id": 0}  # Only fetch needed fields
+            ).sort("timestmp", 1).limit(10000))  # Limit to prevent memory issues
             
             # Format all positions for the initial message
             all_positions = []
