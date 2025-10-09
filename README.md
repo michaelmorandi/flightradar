@@ -1,111 +1,145 @@
-# Flight radar
+# FlightRadar Backend
 
-Fetches [ADS-B](https://en.wikipedia.org/wiki/Automatic_dependent_surveillance_-_broadcast) flight data from radar servers ([Virtual Radar Server](http://www.virtualradarserver.co.uk/) or dump1090) and presents a chronological view of past flights with an interactive live map of position reports. Built with FastAPI 
+A FastAPI-based backend for tracking and managing real-time ADS-B flight data with Server-Sent Events (SSE) streaming capabilities.
 
-## Impressions
+## Features
 
-### Ovierview of past flights
-![Aircraft](https://user-images.githubusercontent.com/54601848/71522312-70d61200-28c4-11ea-9295-cd98c9d20b42.png)
-
-### Flight path visualization
-![Flightpath](https://user-images.githubusercontent.com/54601848/71522306-6ae03100-28c4-11ea-9db8-c93fad289ffe.png)
+- **Real-time Flight Tracking**: Live ADS-B data collection from radar servers
+- **Server-Sent Events (SSE)**: Real-time position streaming to web clients
+- **Interactive REST API**: Comprehensive flight and position data endpoints
+- **Aircraft Data Enrichment**: Optional web crawling for unknown aircraft
+- **Military Flight Filtering**: Configurable military-only tracking mode
 
 ## Prerequisites
 
-1. Make sure you have Python 3 installed,
-1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) for dependency management
-1. Install the dependencies with ```uv sync```
+1. **Python 3.11+** - Required for the application
+2. **UV Package Manager** - [Install UV](https://docs.astral.sh/uv/getting-started/installation/)
+3. **MongoDB** - Database for flight and position data
+4. **ADS-B Data Source** - dump1090 or Virtual Radar Server
+5. **MongoDB Integration** A MongoDB server to store flight data
 
-## Configuration
+## Quick Start
 
-The application can either be configured by enviroment variables or by a config file
-
-### Config file
-
-1. Copy the ```config.json``` from contrib/samples to the project root
-2. Configure host/port of your radar server
-4. Choose whether you want to track military planes only
-5. Configure MongoDB as your database (see Database Configuration below)
-
-### Enviroment variables
-
-See section below for details
-
-* DATA_FOLDER
-* SERVICE_URL
-* SERVICE_TYPE
-* MIL_ONLY
-* DB_RETENTION_MIN
-* UNKNOWN_AIRCRAFT_CRAWLING
-* MONGODB_URI
-* MONGODB_DB_NAME
-
-### Database Configuration
-
-The application uses MongoDB for data storage, with time-series collections for efficient position data storage:
-
-Configure MongoDB in your config.json:
-```json
-"database": {
-    "mongodb_uri": "mongodb://localhost:27017/",
-    "mongodb_db_name": "flightradar"
-}
+### 1. Install Dependencies
+```bash
+cd flightradar-backend
+uv sync
 ```
 
-Or set these environment variables:
+### 2. Configure Application
+
+#### Option A: Config File (Recommended)
+```bash
+# Copy sample config
+cp contrib/samples/config.json config.json
+
+# Edit config.json with your settings
 ```
-MONGODB_URI=mongodb://localhost:27017/
-MONGODB_DB_NAME=flightradar
+
+#### Option B: Environment Variables
+```bash
+export MONGODB_URI="mongodb://localhost:27017/"
+export MONGODB_DB_NAME="flightradar"
+export SERVICE_URL="http://your-radar-server:8080"
+export SERVICE_TYPE="vrs"  # or "dump1090"
 ```
 
-
-### Config options
-
-| Option name                | Optional | Default value | Description                                                                                                                                                                                                                                                                                                                        |
-|----------------------------|----------|---------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| ```serviceUrl```           | no       |               | The url to your radar service                                                                                                                                                                                                                                                                                                      |
-| ```type```                 | yes      | vrs           | The type of your radar service, either vrs for VirtualRadarServer or dmp1090 for dump1090                                                                                                                                                                                                                                           |
-| ```dataFolder```           | yes      | resources     | the absolute path to your resources folder                                                                                                                                                                                                                                                                                         |
-| ```militaryOnly```         | yes      | false         | Whether everything other than military planes should be filtered (true or false)                                                                                                                                                                                                                                                   |
-| ```deleteAfterMinutes```   | yes      | 1440          | Determines how many minutes after the last signal was received should the the flight in the dababase be retained before it's deleted. Set to 0 to keep entries indefinitely                                                                                                                                                        |
-| ```logging```              | yes      |               | ```syslogHost``` The host to send logs to<br>```syslogFormat``` The syslog log format<br>```logLevel``` [optional] Log level, See [here](https://docs.python.org/2/library/logging.html#logging-levels) for more infos<br>```logToConsole``` [optional] If true, logs are logged to syslog and to console, if false only to syslog |
-| ```crawlUnknownAircraft``` | yes      | false         | If true, aircraft not found in the database will be looked up in various data sources on the web. Since this method uses crawling which might not always be allowed, beware: This could potentially lead to blocking of your IP address                                                                                         |
-| ```googleMapsApiKey```     | no       |               | The map view needs an API key to render the map. You can get one [here](https://developers.google.com/maps/documentation/javascript/get-api-key).                           
-
-## Running Flightradar
-
-### Initializing the database
-
-Flightradar needs to initialize the MongoDB database schema before first use. When building a docker image, the database is initialized upon build time.
-
-The app will create the required collections and indexes in the specified MongoDB database, including time-series collections for efficient position data storage.
-
-Initialize schema:
-```
+### 3. Initialize Database
+```bash
 uv run python flightradar.py initschema
 ```
 
-### Starting the application
+### 4. Start Development Server
+```bash
+# Standard development server
+uv run python -m uvicorn flightradar:app --host 0.0.0.0 --port 8000 --reload
 
-Running it with the development server (__Not recommended__ for productive use). Don't forget to initialize the db (see above) before the first run:
-
-```
-uv run uvicorn flightradar:app --reload
-```
-
-Running it with ASGI in production (__recommended setup__) (binds to all interfaces on port 8083):
-```
-uv run uvicorn flightradar:app --host 0.0.0.0 --port 8083
+# Alternative command
+uv run uvicorn flightradar:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Or using Gunicorn with Uvicorn workers:
+### 5. Test SSE Endpoints
+```bash
+# Test live positions stream
+curl -N -H "Accept: text/event-stream" http://localhost:8000/api/v1/sse/positions/live
+
+# Test flight-specific stream
+curl -N -H "Accept: text/event-stream" http://localhost:8000/api/v1/sse/flights/ABC123/positions
 ```
-uv run gunicorn flightradar:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8083
+
+## Configuration Options
+
+### Core Settings
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `serviceUrl` | yes | - | URL to your radar service |
+| `type` | no | `vrs` | Service type: `vrs` or `dump1090` |
+| `dataFolder` | no | `resources` | Path to resources folder |
+| `militaryOnly` | no | `false` | Filter non-military aircraft |
+
+### Database Configuration
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `mongodb_uri` | yes | - | MongoDB connection string |
+| `mongodb_db_name` | yes | - | MongoDB database name |
+| `deleteAfterMinutes` | no | `1440` | Data retention period (0 = indefinite) |
+
+### Advanced Options
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `crawlUnknownAircraft` | no | `false` | Web lookup for unknown aircraft |
+| `googleMapsApiKey` | no | - | For map rendering |
+
+## Production Deployment
+
+### Option 1: Uvicorn
+```bash
+uv run uvicorn flightradar:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
-## Using Windows
-When running the application on Windows, consider the following: 
-* Use ```SET``` instead of ```export``` when using Windows
+### Option 2: Docker (recommended)
+```bash
+docker build -t flightradar-backend .
+docker run -d -p 8000:8000 --env-file .env flightradar-backend
+```
 
-## Known issues
+## 🔌 API Endpoints
 
+### REST API
+- `GET /api/v1/flights` - List all flights
+- `GET /api/v1/flights/{id}` - Get specific flight
+- `GET /api/v1/flights/{id}/positions` - Get flight position history
+- `GET /api/v1/positions` - Get all current positions
+- `GET /api/v1/info` - Application metadata
+- `GET /api/v1/alive` - Health check
+- `GET /api/v1/ready` - Readiness check
+
+### Server-Sent Events (SSE)
+- `GET /api/v1/sse/positions/live` - Real-time position updates
+- `GET /api/v1/sse/flights/{flight_id}/positions` - Flight-specific updates
+
+### Interactive API Documentation
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+## Development & Testing
+
+### Run Tests
+```bash
+# Run all tests
+uv run pytest
+
+# Run with coverage
+uv run pytest --cov=app tests/
+```
+### Health Checks
+- `/api/v1/alive` - Basic health check
+- `/api/v1/ready` - Readiness with scheduler status
+
+### Environment Variables for Production
+```bash
+export MONGODB_URI="mongodb://user:pass@localhost:27017/"
+export SERVICE_URL="https://your-radar-server.com"
+export SECRET_KEY="your-secret-key"
+export ENVIRONMENT="production"
+```

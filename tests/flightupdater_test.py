@@ -17,12 +17,12 @@ class FlightUpdaterCoordinatorTest(MongoDBBaseTestCase):
         self.mock_radar_service = MagicMock()
         self.mock_flight_manager = MagicMock()
         self.mock_position_manager = MagicMock()
-        self.mock_websocket_notifier = MagicMock()
-        
+        self.mock_sse_notifier = MagicMock()
+
         self.sut._radar_service = self.mock_radar_service
         self.sut._flight_manager = self.mock_flight_manager
         self.sut._position_manager = self.mock_position_manager
-        self.sut._websocket_notifier = self.mock_websocket_notifier
+        self.sut._sse_notifier = self.mock_sse_notifier
         
     def tearDown(self):
         MongoDBBaseTestCase.tearDown(self)
@@ -45,17 +45,17 @@ class FlightUpdaterCoordinatorTest(MongoDBBaseTestCase):
         self.assertEqual(result, expected_flights)
         self.mock_position_manager.get_cached_flights.assert_called_once_with(self.mock_flight_manager)
 
-    def test_websocket_callback_registration(self):
-        """Test websocket callback registration and unregistration"""
+    def test_sse_callback_registration(self):
+        """Test SSE callback registration and unregistration"""
         callback = MagicMock()
-        
+
         # Test registration
-        result = self.sut.register_websocket_callback(callback)
-        self.mock_websocket_notifier.register_callback.assert_called_once_with(callback)
-        
+        result = self.sut.register_sse_callback(callback)
+        self.mock_sse_notifier.register_callback.assert_called_once_with(callback)
+
         # Test unregistration
-        self.sut.unregister_websocket_callback(callback)
-        self.mock_websocket_notifier.unregister_callback.assert_called_once_with(callback)
+        self.sut.unregister_sse_callback(callback)
+        self.mock_sse_notifier.unregister_callback.assert_called_once_with(callback)
 
     def test_get_silhouette_params(self):
         """Test that get_silhouette_params returns radar service params"""

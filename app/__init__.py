@@ -58,6 +58,14 @@ def create_app():
     # Configure async tasks
     @app.on_event("startup")
     async def startup():
+        # Capture the event loop and pass it to scheduling
+        import asyncio
+        from .sse.notifier import SSENotifier
+
+        loop = asyncio.get_running_loop()
+        SSENotifier._main_loop = loop
+        logger.info(f"Captured FastAPI event loop for SSE: {loop}")
+
         configure_scheduling(app, conf)
 
     @app.on_event("shutdown")

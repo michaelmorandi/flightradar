@@ -91,6 +91,7 @@ class PositionManager:
         flight_updates = []
         
         # Pre-compute hashes for this batch in one pass, this avoids repeated calculations
+        # Using 5 decimal places (~1 meter precision)
         position_hashes = {}
         for pos in batch:
             pos_hash = hash((round(pos.lat, 5), round(pos.lon, 5), pos.alt))
@@ -111,7 +112,7 @@ class PositionManager:
             
             if flight_id in self.flight_lastpos_map:
                 last_pos = self.flight_lastpos_map[flight_id]
-                
+
                 last_pos_hash = hash((
                     round(last_pos.lat, 5),
                     round(last_pos.lon, 5),
