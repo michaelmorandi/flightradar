@@ -99,9 +99,20 @@ uv run uvicorn flightradar:app --host 0.0.0.0 --port 8000 --workers 4
 
 ### Option 2: Docker (recommended)
 ```bash
-docker build -t flightradar-backend .
-docker run -d -p 8000:8000 --env-file .env flightradar-backend
+# Build with git version information (tag or commit hash)
+./contrib/build.sh
+
+# Or manually:
+docker build -t flightradar:latest \
+  --build-arg COMMIT_ID=$(git describe --tags --always --dirty) .
+
+# Run the container
+docker run -d -p 8000:8000 --env-file .env flightradar:latest
 ```
+
+The Docker image automatically captures the git tag (or commit hash if no tag exists) at build time. This version information is:
+- Logged on server startup
+- Accessible via `/api/v1/info` endpoint in the `commit_id` field
 
 ## 🔌 API Endpoints
 
@@ -110,7 +121,7 @@ docker run -d -p 8000:8000 --env-file .env flightradar-backend
 - `GET /api/v1/flights/{id}` - Get specific flight
 - `GET /api/v1/flights/{id}/positions` - Get flight position history
 - `GET /api/v1/positions` - Get all current positions
-- `GET /api/v1/info` - Application metadata
+- `GET /api/v1/info` - Application metadata (commit_id, build_timestamp)
 - `GET /api/v1/alive` - Health check
 - `GET /api/v1/ready` - Readiness check
 

@@ -38,6 +38,9 @@ def create_app():
     app.state.config = conf
     app.state.metaInfo = MetaInformation()
 
+    # Log version information
+    logger.info(f"Flight Radar API starting - Commit: {app.state.metaInfo.commit_id}, Built: {app.state.metaInfo.build_timestamp}")
+
     from .core.utils.modes_util import ModesUtil
     app.state.modes_util = ModesUtil(conf.DATA_FOLDER)
 

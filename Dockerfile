@@ -2,7 +2,8 @@ FROM python:3-alpine
 
 LABEL maintainer="Michael Morandi"
 
-# Git commit hash (short version)
+# Git commit information (tag or hash)
+# Pass this as build arg: --build-arg COMMIT_ID=$(git describe --tags --always --dirty)
 ARG COMMIT_ID="development"
 ENV COMMIT_ID=$COMMIT_ID
 

@@ -248,14 +248,48 @@ async def sse_all_positions(request: Request):
     )
 
 
+def _format_position(position_data, include_gs: bool = True) -> dict:
+    """Helper to format a position dict with consistent structure"""
+    formatted = {
+        "lat": position_data.get("lat") if isinstance(position_data, dict) else position_data.lat,
+        "lon": position_data.get("lon") if isinstance(position_data, dict) else position_data.lon,
+        "alt": position_data.get("alt", -1) if isinstance(position_data, dict) else (position_data.alt if position_data.alt is not None else -1)
+    }
+    if include_gs:
+        gs = position_data.get("gs") if isinstance(position_data, dict) else getattr(position_data, "gs", None)
+        if gs is not None:
+            formatted["gs"] = gs
+    return formatted
+
+
+def _positions_equal(pos1: dict, pos2: dict) -> bool:
+    """Check if two positions are equal"""
+    return (pos1["lat"] == pos2["lat"] and
+            pos1["lon"] == pos2["lon"] and
+            pos1["alt"] == pos2["alt"] and
+            pos1.get("gs") == pos2.get("gs"))
+
+
+async def _fetch_flight_positions(mongodb, flight_id: str) -> list:
+    """Fetch positions for a flight from MongoDB in a thread pool"""
+    flight_oid = ObjectId(flight_id)
+
+    def fetch():
+        return list(mongodb.positions.find(
+            {"flight_id": flight_oid},
+            {"lat": 1, "lon": 1, "alt": 1, "gs": 1, "_id": 0}
+        ).sort("timestmp", 1).limit(10000))
+
+    return await asyncio.to_thread(fetch)
+
+
 @router.get('/flights/{flight_id}/positions/stream')
 async def sse_flight_positions(request: Request, flight_id: str):
     """SSE endpoint for real-time position updates for a specific flight"""
-    client_id = str(uuid.uuid4())
     app = request.app
     mongodb = app.state.mongodb
-    
-    # Check if flight exists (run in thread pool to avoid blocking)
+
+    # Verify flight exists (run in thread pool to avoid blocking)
     try:
         flight = await asyncio.to_thread(
             lambda: mongodb.flights.find_one({"_id": ObjectId(flight_id)})
@@ -269,7 +303,7 @@ async def sse_flight_positions(request: Request, flight_id: str):
         raise HTTPException(status_code=500, detail="Server error")
     
     async def event_stream() -> AsyncGenerator[str, None]:
-        # Create SSE client
+        client_id = str(uuid.uuid4())
         queue = asyncio.Queue()
         client = SSEClient(
             id=client_id,
@@ -279,102 +313,53 @@ async def sse_flight_positions(request: Request, flight_id: str):
             flight_id=flight_id
         )
 
-        # Add client to manager
         sse_manager.add_client(client)
-
         registered_callback = None
         last_position = None
 
         try:
-            # Load ALL historical positions from database
-            # Run the blocking MongoDB query in a thread pool to avoid blocking the event loop
-            flight_oid = ObjectId(flight_id)
+            # Fetch historical positions from database
+            positions = await _fetch_flight_positions(mongodb, flight_id)
+            all_positions = [_format_position(pos) for pos in positions]
 
-            def fetch_positions():
-                """Fetch positions in a thread pool to avoid blocking"""
-                return list(mongodb.positions.find(
-                    {"flight_id": flight_oid},
-                    {"lat": 1, "lon": 1, "alt": 1, "gs": 1, "_id": 0}
-                ).sort("timestmp", 1).limit(10000))
-
-            positions = await asyncio.to_thread(fetch_positions)
-
-            # Format all historical positions
-            all_positions = []
-            if positions:
-                for pos in positions:
-                    position_data = {
-                        "lat": pos["lat"],
-                        "lon": pos["lon"],
-                        "alt": pos["alt"] if pos["alt"] is not None else -1
-                    }
-                    if pos.get("gs") is not None:
-                        position_data["gs"] = pos["gs"]
-                    all_positions.append(position_data)
-
-            # Check if flight has a current position in memory (for live flights)
+            # Add current in-memory position if available and different from last DB position
             cached_flights = app.state.updater.get_cached_flights()
             current_position = cached_flights.get(flight_id)
 
             if current_position:
-                # Add current in-memory position to the list (if it's newer than DB data)
-                current_pos_data = {
-                    "lat": current_position.lat,
-                    "lon": current_position.lon,
-                    "alt": current_position.alt if current_position.alt is not None else -1
-                }
-                if hasattr(current_position, 'gs') and current_position.gs is not None:
-                    current_pos_data["gs"] = current_position.gs
+                current_pos_data = _format_position(current_position)
 
-                # Check if this position is different from the last DB position
-                if not all_positions or (
-                    all_positions[-1]["lat"] != current_pos_data["lat"] or
-                    all_positions[-1]["lon"] != current_pos_data["lon"] or
-                    all_positions[-1]["alt"] != current_pos_data["alt"]
-                ):
+                if not all_positions or not _positions_equal(all_positions[-1], current_pos_data):
                     all_positions.append(current_pos_data)
 
                 last_position = current_pos_data
             else:
                 last_position = all_positions[-1] if all_positions else None
 
-            # Send initial message with ALL positions (historical + current)
-            initial_message = {
-                "type": "initial",
-                "count": len(all_positions),
-                "positions": {flight_id: all_positions} if all_positions else {}
-            }
-
-            yield f"event: flight_position\ndata: {json.dumps(initial_message)}\n\n"
+            # Send initial message with all positions
+            yield f"event: flight_position\ndata: {json.dumps({
+                'type': 'initial',
+                'count': len(all_positions),
+                'positions': {flight_id: all_positions} if all_positions else {}
+            })}\n\n"
             
-            # Function to track position changes for a specific flight
+            # Callback for live position updates
             async def send_flight_position_updates(positions_dict):
-                """Callback function to send position updates for a specific flight"""
+                """Send position updates when flight position changes"""
                 nonlocal last_position
 
-                # Check if this update contains this flight
                 if flight_id not in positions_dict:
                     return
 
-                # Get flight's new position
                 new_position = positions_dict[flight_id]
 
-                # Skip if there's no previous position yet
                 if last_position is None:
                     last_position = new_position
                     await sse_manager.send_flight_position(flight_id, new_position)
                     return
 
-                # Only send update if position has changed
-                if (last_position["lat"] != new_position["lat"] or
-                    last_position["lon"] != new_position["lon"] or
-                    last_position["alt"] != new_position["alt"] or
-                    last_position.get("gs") != new_position.get("gs")):
-
-                    # Update the last known position
+                if not _positions_equal(last_position, new_position):
                     last_position = new_position
-
-                    # Send position update via SSE manager
                     await sse_manager.send_flight_position(flight_id, new_position)
             
             # Register the callback with the flight updater
@@ -448,20 +433,11 @@ async def get_positions(flight_id: str, mongodb: Database = Depends(get_mongodb)
         if not flight:
             raise HTTPException(status_code=404, detail="Flight not found")
 
-        positions = await asyncio.to_thread(
-            lambda: list(mongodb.positions.find(
-                {"flight_id": ObjectId(flight_id)},
-                {"lat": 1, "lon": 1, "alt": 1, "_id": 0}
-            ).sort("timestmp", 1).limit(10000))
-        )
+        positions = await _fetch_flight_positions(mongodb, flight_id)
 
         # Convert to array of arrays format
-        result = []
-        for p in positions:
-            alt = p["alt"] if p["alt"] is not None else -1
-            result.append([p["lat"], p["lon"], alt])
-
-        return result
+        return [[p["lat"], p["lon"], p.get("alt", -1) if p.get("alt") is not None else -1]
+                for p in positions]
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid flight id format: {str(e)}")
@@ -491,19 +467,14 @@ def get_all_positions(
     filter: Optional[str] = Query(None, description="Filter positions (e.g. 'mil' for military only)")
 ):
     cached_flights = request.app.state.updater.get_cached_flights()
-    
     positions = {}
-    
+
     for icao24, flight_data in cached_flights.items():
         if filter == 'mil' and not request.app.state.modes_util.is_military(icao24):
             continue
-            
-        # Convert flight data to position array format
+
         if hasattr(flight_data, 'lat') and hasattr(flight_data, 'lon'):
-            alt = getattr(flight_data, 'alt', -1)
-            if alt is None:
-                alt = -1
-                
-            positions[icao24] = [[flight_data.lat, flight_data.lon, alt]]
-    
+            pos = _format_position(flight_data, include_gs=False)
+            positions[icao24] = [[pos["lat"], pos["lon"], pos["alt"]]]
+
     return positions
