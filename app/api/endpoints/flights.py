@@ -151,9 +151,11 @@ def get_flights(
         404: {"description": "Flight not found"}
     }
 )
-def get_flight(flight_id: str, mongodb: Database = Depends(get_mongodb)):
+async def get_flight(flight_id: str, mongodb: Database = Depends(get_mongodb)):
     try:
-        flight = mongodb.flights.find_one({"_id": ObjectId(flight_id)})
+        flight = await asyncio.to_thread(
+            lambda: mongodb.flights.find_one({"_id": ObjectId(flight_id)})
+        )
 
         if flight:
             return toFlightDto(flight)
@@ -253,11 +255,15 @@ async def sse_flight_positions(request: Request, flight_id: str):
     app = request.app
     mongodb = app.state.mongodb
     
-    # Check if flight exists
+    # Check if flight exists (run in thread pool to avoid blocking)
     try:
-        flight = mongodb.flights.find_one({"_id": ObjectId(flight_id)})
+        flight = await asyncio.to_thread(
+            lambda: mongodb.flights.find_one({"_id": ObjectId(flight_id)})
+        )
         if not flight:
             raise HTTPException(status_code=404, detail=f'Flight {flight_id} not found')
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error checking flight {flight_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Server error")
@@ -272,26 +278,29 @@ async def sse_flight_positions(request: Request, flight_id: str):
             type="flight",
             flight_id=flight_id
         )
-        
+
         # Add client to manager
         sse_manager.add_client(client)
-        
+
         registered_callback = None
         last_position = None
-        
+
         try:
-            # Get the flight ID in ObjectId format
+            # Load ALL historical positions from database
+            # Run the blocking MongoDB query in a thread pool to avoid blocking the event loop
             flight_oid = ObjectId(flight_id)
-            
-            # Fetch initial positions from mongodb for the given flight
-            positions = list(mongodb.positions.find(
-                {"flight_id": flight_oid},
-                {"lat": 1, "lon": 1, "alt": 1, "gs": 1, "_id": 0}  # Only fetch needed fields
-            ).sort("timestmp", 1).limit(10000))  # Limit to prevent memory issues
-            
-            # Format all positions for the initial message
+
+            def fetch_positions():
+                """Fetch positions in a thread pool to avoid blocking"""
+                return list(mongodb.positions.find(
+                    {"flight_id": flight_oid},
+                    {"lat": 1, "lon": 1, "alt": 1, "gs": 1, "_id": 0}
+                ).sort("timestmp", 1).limit(10000))
+
+            positions = await asyncio.to_thread(fetch_positions)
+
+            # Format all historical positions
             all_positions = []
-            
             if positions:
                 for pos in positions:
                     position_data = {
@@ -302,54 +311,77 @@ async def sse_flight_positions(request: Request, flight_id: str):
                     if pos.get("gs") is not None:
                         position_data["gs"] = pos["gs"]
                     all_positions.append(position_data)
-                
-                # Save the most recent position for comparison with future updates
+
+            # Check if flight has a current position in memory (for live flights)
+            cached_flights = app.state.updater.get_cached_flights()
+            current_position = cached_flights.get(flight_id)
+
+            if current_position:
+                # Add current in-memory position to the list (if it's newer than DB data)
+                current_pos_data = {
+                    "lat": current_position.lat,
+                    "lon": current_position.lon,
+                    "alt": current_position.alt if current_position.alt is not None else -1
+                }
+                if hasattr(current_position, 'gs') and current_position.gs is not None:
+                    current_pos_data["gs"] = current_position.gs
+
+                # Check if this position is different from the last DB position
+                if not all_positions or (
+                    all_positions[-1]["lat"] != current_pos_data["lat"] or
+                    all_positions[-1]["lon"] != current_pos_data["lon"] or
+                    all_positions[-1]["alt"] != current_pos_data["alt"]
+                ):
+                    all_positions.append(current_pos_data)
+
+                last_position = current_pos_data
+            else:
                 last_position = all_positions[-1] if all_positions else None
-            
-            # Send initial positions
+
+            # Send initial message with ALL positions (historical + current)
             initial_message = {
                 "type": "initial",
                 "count": len(all_positions),
                 "positions": {flight_id: all_positions} if all_positions else {}
             }
-            
+
             yield f"event: flight_position\ndata: {json.dumps(initial_message)}\n\n"
             
             # Function to track position changes for a specific flight
             async def send_flight_position_updates(positions_dict):
                 """Callback function to send position updates for a specific flight"""
                 nonlocal last_position
-                
+
                 # Check if this update contains this flight
                 if flight_id not in positions_dict:
                     return
-                    
+
                 # Get flight's new position
                 new_position = positions_dict[flight_id]
-                
+
                 # Skip if there's no previous position yet
                 if last_position is None:
                     last_position = new_position
                     await sse_manager.send_flight_position(flight_id, new_position)
                     return
-                
+
                 # Only send update if position has changed
-                if (last_position["lat"] != new_position["lat"] or 
-                    last_position["lon"] != new_position["lon"] or 
+                if (last_position["lat"] != new_position["lat"] or
+                    last_position["lon"] != new_position["lon"] or
                     last_position["alt"] != new_position["alt"] or
                     last_position.get("gs") != new_position.get("gs")):
-                    
+
                     # Update the last known position
                     last_position = new_position
-                    
+
                     # Send position update via SSE manager
                     await sse_manager.send_flight_position(flight_id, new_position)
             
             # Register the callback with the flight updater
             registered_callback = app.state.updater.register_sse_callback(send_flight_position_updates)
-            
+
             logger.info(f"SSE callback registered for flight {flight_id}")
-            
+
             # Process messages from queue
             while True:
                 try:
@@ -357,7 +389,7 @@ async def sse_flight_positions(request: Request, flight_id: str):
                     message = await asyncio.wait_for(queue.get(), timeout=30.0)
                     event_type = message.get("event", "message")
                     data = message.get("data", {})
-                    
+
                     yield f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
                 except asyncio.TimeoutError:
                     # Send heartbeat to keep connection alive
@@ -408,16 +440,20 @@ async def sse_flight_positions(request: Request, flight_id: str):
         404: {"description": "Flight not found"}
     }
 )
-def get_positions(flight_id: str, mongodb: Database = Depends(get_mongodb)):
+async def get_positions(flight_id: str, mongodb: Database = Depends(get_mongodb)):
     try:
-        flight = mongodb.flights.find_one({"_id": ObjectId(flight_id)})
+        flight = await asyncio.to_thread(
+            lambda: mongodb.flights.find_one({"_id": ObjectId(flight_id)})
+        )
         if not flight:
             raise HTTPException(status_code=404, detail="Flight not found")
 
-        positions = list(mongodb.positions.find(
-            {"flight_id": ObjectId(flight_id)},
-            {"lat": 1, "lon": 1, "alt": 1, "_id": 0}  # Only fetch needed fields
-        ).sort("timestmp", 1).limit(10000))  # Limit to prevent memory issues
+        positions = await asyncio.to_thread(
+            lambda: list(mongodb.positions.find(
+                {"flight_id": ObjectId(flight_id)},
+                {"lat": 1, "lon": 1, "alt": 1, "_id": 0}
+            ).sort("timestmp", 1).limit(10000))
+        )
 
         # Convert to array of arrays format
         result = []

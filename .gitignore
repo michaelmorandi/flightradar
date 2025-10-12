@@ -3,7 +3,6 @@
 !.dockerignore
 venv/*
 *.pyc
-.vscode/*
 resources/*.sqlite*
 config*.json
 resources/BaseStation.sqb
