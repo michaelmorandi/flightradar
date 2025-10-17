@@ -22,12 +22,15 @@ export class MarkerManager {
     this.onMarkerClickCallback = callback;
   }
 
-  updateMarker(id: string, coords: HereCoordinates) {
+  updateMarker(id: string, coords: HereCoordinates, groundSpeed?: number, callsign?: string) {
     if (this.markers.has(id)) {
       const marker = this.markers.get(id);
-      marker?.updatePosition(coords);
+      marker?.updatePosition(coords, groundSpeed);
+      if (callsign) {
+        marker?.updateCallsign(callsign);
+      }
     } else {
-      const marker = new AircraftMarker(id, coords, this.aircraftIcon, this.map, this.iconSvgMap);
+      const marker = new AircraftMarker(id, coords, this.aircraftIcon, this.map, this.iconSvgMap, callsign);
       marker.onPointerDown((event: any) => {
         if (this.onMarkerClickCallback) {
           this.onMarkerClickCallback(event.target.getData());
@@ -68,12 +71,11 @@ export class MarkerManager {
     const lon1Rad = (lon1 * Math.PI) / 180;
     const lat2Rad = (lat2 * Math.PI) / 180;
     const lon2Rad = (lon2 * Math.PI) / 180;
-    
+
     const y = Math.sin(lon2Rad - lon1Rad) * Math.cos(lat2Rad);
-    const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) -
-              Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(lon2Rad - lon1Rad);
-    let heading = Math.atan2(y, x) * 180 / Math.PI;
-    
+    const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(lon2Rad - lon1Rad);
+    let heading = (Math.atan2(y, x) * 180) / Math.PI;
+
     heading = (heading + 360) % 360;
     return heading;
   }
@@ -82,33 +84,28 @@ export class MarkerManager {
     if (flPos.track !== undefined) {
       return { lat: Number(flPos.lat), lng: Number(flPos.lon), heading: flPos.track } as HereCoordinates;
     }
-    
+
     if (positions && flPos.icao) {
       const positionEntries = Array.from(positions.entries());
-      
+
       for (let i = positionEntries.length - 1; i >= 0; i--) {
         const [_, prevPos] = positionEntries[i];
-        if (prevPos.icao === flPos.icao && 
-            (prevPos.lat !== flPos.lat || prevPos.lon !== flPos.lon)) {
-          const heading = this.calculateHeading(
-            prevPos.lat, 
-            prevPos.lon, 
-            flPos.lat, 
-            flPos.lon
-          );
+        if (prevPos.icao === flPos.icao && (prevPos.lat !== flPos.lat || prevPos.lon !== flPos.lon)) {
+          const heading = this.calculateHeading(prevPos.lat, prevPos.lon, flPos.lat, flPos.lon);
           return { lat: Number(flPos.lat), lng: Number(flPos.lon), heading } as HereCoordinates;
         }
       }
     }
-    
+
     return { lat: Number(flPos.lat), lng: Number(flPos.lon), heading: 0 } as HereCoordinates;
   }
 
   updateAircraftPositions(positions: Map<string, TerrestialPosition>) {
     this.positionStore.updatePositions(positions);
-    
+
     positions.forEach((pos: TerrestialPosition, flightId: string) => {
-      this.updateMarker(flightId, this.convertToHereCoords(pos, positions));
+      const coords = this.convertToHereCoords(pos, positions);
+      this.updateMarker(flightId, coords, pos.gs, pos.callsign);
     });
 
     const now = new Date();
@@ -119,7 +116,7 @@ export class MarkerManager {
         this.removeMarker(key);
       }
     }
-    
+
     this.positionStore.purgeStalePositions();
   }
 

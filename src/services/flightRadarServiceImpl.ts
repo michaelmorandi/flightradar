@@ -393,8 +393,6 @@ export class FlightRadarServiceImpl implements FlightRadarService {
 
     const url = this.getStreamUrl(`flights/${flightId}/positions/stream`);
 
-    console.debug(`Connecting to flight position stream: ${url}`);
-
     try {
       const eventSource = new EventSource(url);
       this.flightPositionsEventSources.set(flightId, eventSource);
