@@ -2,31 +2,15 @@ import json
 from pathlib import Path
 
 class MetaInformation:
-
-    """ Application configuration """
-
-    commit_id = None
-    build_timestamp = None
+    """Loads build metadata from resources/meta.json (generated at build time)"""
 
     def __init__(self):
+        self.commit_id = "unknown"
+        self.build_timestamp = "unknown"
 
-        FILE_PATH = 'resources/meta.json'
-
-        config_file = Path(FILE_PATH)
-        if config_file.is_file():
-            self.from_file(FILE_PATH)
-
-    def from_file(self, filename):
-        with open(filename, 'r') as json_file:
-            config = json.load(json_file)
-
-            # Support both camelCase and snake_case for backwards compatibility
-            if 'commit_id' in config:
-                self.commit_id = config['commit_id']
-            elif 'gitCommitId' in config:
-                self.commit_id = config['gitCommitId']
-
-            if 'build_timestamp' in config:
-                self.build_timestamp = config['build_timestamp']
-            elif 'buildTimestamp' in config:
-                self.build_timestamp = config['buildTimestamp']
+        meta_file = Path('resources/meta.json')
+        if meta_file.is_file():
+            with open(meta_file, 'r') as f:
+                data = json.load(f)
+                self.commit_id = data.get('commit_id', 'unknown')
+                self.build_timestamp = data.get('build_timestamp', 'unknown')

@@ -4,5 +4,6 @@
 venv/*
 *.pyc
 resources/*.sqlite*
+resources/meta.json
 config*.json
 resources/BaseStation.sqb

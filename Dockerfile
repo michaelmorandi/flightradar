@@ -2,11 +2,6 @@ FROM python:3-alpine
 
 LABEL maintainer="Michael Morandi"
 
-# Git commit information (tag or hash)
-# Pass this as build arg: --build-arg COMMIT_ID=$(git describe --tags --always --dirty)
-ARG COMMIT_ID="development"
-ENV COMMIT_ID=$COMMIT_ID
-
 # system prerquisites
 RUN apk update
 RUN apk upgrade
@@ -29,9 +24,9 @@ RUN uv sync --frozen
 COPY --chown=radar app app
 RUN mkdir resources
 COPY resources/mil_ranges.csv resources/
+COPY resources/meta.json resources/
 COPY flightradar.py ./
 COPY --chown=radar contrib/start.sh ./
-RUN echo "{ \"commit_id\": \"$COMMIT_ID\", \"build_timestamp\": \"`date -I'seconds'`\"}" > resources/meta.json
 
 
 # runtime config

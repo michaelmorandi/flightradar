@@ -99,12 +99,12 @@ uv run uvicorn flightradar:app --host 0.0.0.0 --port 8000 --workers 4
 
 ### Option 2: Docker (recommended)
 ```bash
-# Build with git version information (tag or commit hash)
+# Build with automatic git version capture
 ./contrib/build.sh
 
-# Or manually:
-docker build -t flightradar:latest \
-  --build-arg COMMIT_ID=$(git describe --tags --always --dirty) .
+# Or manually (generates meta.json first, then builds):
+./contrib/generate-meta.sh
+docker build -t flightradar:latest .
 
 # Run the container
 docker run -d -p 8000:8000 --env-file .env flightradar:latest
