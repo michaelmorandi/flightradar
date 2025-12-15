@@ -3,6 +3,9 @@ import os
 import logging
 from enum import Enum
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger("Config")
 
@@ -43,7 +46,6 @@ class LoggingConfig:
 
 class ConfigSource(Enum):
     NONE = 0
-    FILE = 1
     ENV = 2
 
 class Config:
@@ -57,20 +59,19 @@ class Config:
     DB_RETENTION_MIN = 1440
     LOGGING_CONFIG = None
     UNKNOWN_AIRCRAFT_CRAWLING = False
-    
+
     # Database configuration
     MONGODB_URI = 'mongodb://localhost:27017/'
     MONGODB_DB_NAME = 'flightradar'
 
-    def __init__(self, config_file='config.json'):
+    # gRPC configuration (used when RADAR_SERVICE_TYPE = 'grpc')
+    GRPC_SERVER_ADDRESS = 'localhost:50051'
+
+    def __init__(self):
 
         self.config_src = ConfigSource.NONE
 
-        config_file = Path(config_file)
-        if config_file.is_file():
-            self.from_file(config_file)
-        else:
-            self.from_env()
+        self.from_env()
 
         if self.config_src == ConfigSource.NONE:
             raise ValueError('Configuration is neither read from env nor file')
@@ -94,6 +95,7 @@ class Config:
         ENV_LOGGING_CONFIG = 'LOGGING_CONFIG'
         ENV_MONGODB_URI = 'MONGODB_URI'
         ENV_MONGODB_DB_NAME = 'MONGODB_DB_NAME'
+        ENV_GRPC_SERVER_ADDRESS = 'GRPC_SERVER_ADDRESS'
 
         if os.environ.get(ENV_DATA_FOLDER):
             self.DATA_FOLDER = os.environ.get(ENV_DATA_FOLDER)
@@ -120,46 +122,9 @@ class Config:
             self.MONGODB_URI = os.environ.get(ENV_MONGODB_URI)
         if os.environ.get(ENV_MONGODB_DB_NAME):
             self.MONGODB_DB_NAME = os.environ.get(ENV_MONGODB_DB_NAME)
+        if os.environ.get(ENV_GRPC_SERVER_ADDRESS):
+            self.GRPC_SERVER_ADDRESS = os.environ.get(ENV_GRPC_SERVER_ADDRESS)
         self.config_src = ConfigSource.ENV
-
-    def from_file(self, filename):
-        with open(filename, 'r') as json_file:
-            config = json.load(json_file)
-
-            if 'dataFolder' in config:
-                self.DATA_FOLDER = config['dataFolder']
-            else:
-                raise ValueError('dataFolder not specified in config')
-
-            if 'type' in config:
-                self.RADAR_SERVICE_TYPE = config['type']
-
-            if 'serviceUrl' in config:
-                self.RADAR_SERVICE_URL = self.sanitize_url(config['serviceUrl'])
-
-            if 'militaryOnly' in config:
-                self.MILTARY_ONLY = config['militaryOnly']
-
-            if 'crawlUnknownAircraft' in config:
-                self.UNKNOWN_AIRCRAFT_CRAWLING = config['crawlUnknownAircraft']                
-
-            if 'deleteAfterMinutes' in config:
-                self.DB_RETENTION_MIN = config['deleteAfterMinutes']  
-
-            if 'logging' in config:
-                try:
-                    self.LOGGING_CONFIG = LoggingConfig.from_json(config['logging'])
-                except ValueError as e:
-                    logging.getLogger().error(e)
-                    
-            if 'database' in config:
-                db_config = config['database']
-                if 'mongodb_uri' in db_config:
-                    self.MONGODB_URI = db_config['mongodb_uri']
-                if 'mongodb_db_name' in db_config:
-                    self.MONGODB_DB_NAME = db_config['mongodb_db_name']
-
-            self.config_src = ConfigSource.FILE
 
     def __str__(self):
         return 'data folder: {0}, service url: {1}, type: {2}, mil only: {3}, delete after: {4}, crawling: {5}'.format(self.DATA_FOLDER, self.RADAR_SERVICE_URL, self.RADAR_SERVICE_TYPE, self.MILTARY_ONLY, self.DB_RETENTION_MIN, self.UNKNOWN_AIRCRAFT_CRAWLING) 

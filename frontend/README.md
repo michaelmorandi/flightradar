@@ -2,52 +2,65 @@
 
 A Vue.js application for tracking and displaying flight radar information.
 
-## Project setup
+## Getting Started
 
-### Install dependencies
-```
+### 1. Install dependencies
+```bash
 npm install
 ```
 
-### Configuration
+### 2. Configuration
 
-Create a `.env.local` file in the project root with the following variables:
+Create a `.env` file in the frontend directory with the following variables:
 
-```
-# Flight Radar API Configuration
-VITE_APP_FLIGHT_API_URL=http://your-api-url/api
-VITE_APP_FLIGHT_API_USERNAME=username
-VITE_APP_FLIGHT_API_PASSWORD=password
+```bash
+# Flight API Configuration
+VITE_FLIGHT_API_URL=http://localhost:8000/api/v1
 
-# Here Maps API Key - Get yours at https://developer.here.com/
-VITE_APP_HERE_API_KEY=your-here-api-key-goes-here
+# HERE Maps API Key (optional - get from https://developer.here.com/)
+VITE_HERE_API_KEY=
 
-# Use mock data if API is unavailable (true/false)
-VITE_APP_MOCK_DATA=true
-```
+# Flight API Authentication (optional)
+VITE_FLIGHT_API_USER=
+VITE_FLIGHT_API_PASSWORD=
 
-#### Mock Data
-
-If you don't have access to the flight radar API, you can set `VITE_APP_MOCK_DATA` to `true` to use mock data instead.
-
-### Compiles and hot-reloads for development
-```
-npm run serve
+# Mock Data Mode (set to 'true' to use mock data instead of real API)
+VITE_MOCK_DATA=false
 ```
 
-### Compiles and minifies for production
+**Note**: A `.env` file should already exist with default values. Update `VITE_HERE_API_KEY` if you want map functionality.
+
+### 3. Start development server
+```bash
+npm run dev
 ```
+
+The frontend will be available at http://localhost:5173
+
+### 4. Build for production
+```bash
 npm run build
 ```
 
-### Lints and fixes files
+### 5. Preview production build
+```bash
+npm run preview
 ```
+
+### 6. Lint and fix files
+```bash
 npm run lint
 ```
 
+## Mock Data Mode
+
+If you don't have access to the backend API, you can set `VITE_MOCK_DATA=true` to use mock data instead. This allows you to develop and test the frontend without a running backend.
+
+## Prerequisites
+
+- **Node.js 18+** - Required for the application
+- **Backend API** - The backend should be running at the URL specified in `VITE_FLIGHT_API_URL` (default: http://localhost:8000/api/v1)
+
 ## Error Handling
 
-The application includes robust error handling for network errors and API issues. When using mock data (`VITE_APP_MOCK_DATA=true`), the application will work without a real API connection.
-
-## Customize configuration
-See [Configuration Reference](https://cli.vuejs.org/config/).
+The application includes robust error handling for network errors and API issues. Check the browser console for any connection errors if the application isn't receiving data.

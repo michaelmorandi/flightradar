@@ -1,24 +1,28 @@
 import unittest
-from test import support
+from unittest.mock import patch
+import os
 
 from app.config import Config, ConfigSource, LoggingConfig
 
 
 class ConfigTest(unittest.TestCase):
 
-    def test_env_fallback(self):
-        "Test fallback to env when config file is missing"
+    def test_env_loading(self):
+        "Test loading from env"
 
-        with support.EnvironmentVarGuard() as env:
-            env.set('DATA_FOLDER','someresource')
-            env.set('SERVICE_URL','http://path/to/service')
-            env.set('SERVICE_TYPE','srvtype')
-            env.set('MIL_ONLY','true')
-            env.set('DB_RETENTION_MIN','999')
-            env.set('UNKNOWN_AIRCRAFT_CRAWLING','true')
-            env.set('LOGGING_CONFIG', '{\"syslogHost\":\"log.server.com\",\"syslogFormat\":\"logformat:[%(name)s]%(message)s\",\"logLevel\":\"INFO\",\"logToConsole\":true}')      
+        env_vars = {
+            'DATA_FOLDER': 'someresource',
+            'SERVICE_URL': 'http://path/to/service',
+            'SERVICE_TYPE': 'srvtype',
+            'MIL_ONLY': 'true',
+            'DB_RETENTION_MIN': '999',
+            'UNKNOWN_AIRCRAFT_CRAWLING': 'true',
+            'LOGGING_CONFIG': '{\"syslogHost\":\"log.server.com\",\"syslogFormat\":\"logformat:[%(name)s]%(message)s\",\"logLevel\":\"INFO\",\"logToConsole\":true}'
+        }
 
-            config = Config('/path/tononexistent.json')
+        with patch.dict(os.environ, env_vars):      
+
+            config = Config()
             self.assertEqual(ConfigSource.ENV, config.config_src)
             self.assertEqual('someresource', config.DATA_FOLDER)
             self.assertEqual('http://path/to/service', config.RADAR_SERVICE_URL)

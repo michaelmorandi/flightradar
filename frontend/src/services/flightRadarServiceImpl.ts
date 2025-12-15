@@ -51,7 +51,7 @@ export class FlightRadarServiceImpl implements FlightRadarService {
       },
     };
 
-    this.apiBasepath = config.flightApiUrl;
+    this.apiBasepath = config.flightApiUrl || '';
   }
 
   public getFlights(numEntries: number, filter?: string): Observable<Array<Flight>> {
