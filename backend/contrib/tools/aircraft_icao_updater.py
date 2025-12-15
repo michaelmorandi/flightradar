@@ -90,7 +90,6 @@ def update_aircraft_with_icao_designators(config: Config):
 
 def main():
     parser = argparse.ArgumentParser(description="Update aircraft documents with ICAO type designators")
-    parser.add_argument("--config", default="config.json", help="Configuration file path")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
     
     args = parser.parse_args()
@@ -106,7 +105,7 @@ def main():
     
     # Load configuration
     try:
-        config = Config(args.config)
+        config = Config()
         logger.info("Configuration loaded successfully")
     except Exception as e:
         logger.error(f"Failed to load configuration: {e}")

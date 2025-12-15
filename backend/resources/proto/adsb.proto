@@ -1,0 +1,134 @@
+syntax = "proto3";
+
+package adsb;
+
+// Position information for an aircraft
+message Position {
+  // Latitude in degrees (-90 to 90)
+  double latitude = 1;
+  // Longitude in degrees (-180 to 180)
+  double longitude = 2;
+  // True if this is a surface position (aircraft on ground)
+  bool on_ground = 3;
+}
+
+// Velocity information for an aircraft
+message Velocity {
+  // Ground speed in knots
+  double ground_speed_knots = 1;
+  // Heading/track in degrees (0-360, clockwise from north)
+  double heading_degrees = 2;
+  // Vertical rate in feet per minute (positive = climbing)
+  int32 vertical_rate_fpm = 3;
+}
+
+// Emergency/priority status codes
+enum EmergencyStatus {
+  EMERGENCY_STATUS_NONE = 0;
+  EMERGENCY_STATUS_GENERAL = 1;      // General emergency (7700)
+  EMERGENCY_STATUS_MEDICAL = 2;      // Medical emergency
+  EMERGENCY_STATUS_MIN_FUEL = 3;     // Minimum fuel
+  EMERGENCY_STATUS_NO_COMM = 4;      // No communications (7600)
+  EMERGENCY_STATUS_HIJACK = 5;       // Unlawful interference (7500)
+  EMERGENCY_STATUS_DOWNED = 6;       // Downed aircraft
+  EMERGENCY_STATUS_RESERVED = 7;
+}
+
+// Complete state of a tracked aircraft
+message PlaneState {
+  // ICAO 24-bit address as hex string (e.g., "A1B2C3")
+  string icao_address = 1;
+  // Aircraft callsign (flight number), may be empty if not received
+  string callsign = 2;
+  // Current position, may be absent if not yet decoded
+  optional Position position = 3;
+  // Altitude in feet (barometric)
+  optional int32 altitude_feet = 4;
+  // Velocity information, may be absent if not yet received
+  optional Velocity velocity = 5;
+  // Unix timestamp (milliseconds) of last update
+  int64 last_seen_ms = 6;
+  // Unix timestamp (milliseconds) when first seen
+  int64 first_seen_ms = 7;
+  // Number of messages received for this aircraft
+  uint64 message_count = 8;
+  // Transponder squawk code (4-digit octal, e.g., "7700")
+  string squawk = 9;
+  // Emergency/priority status
+  EmergencyStatus emergency = 10;
+  // Aircraft category (from identification message)
+  string category = 11;
+  // True if aircraft has ADS-B capability (vs Mode-S only)
+  bool adsb_capable = 12;
+  // GNSS altitude in feet (if available, more accurate than barometric)
+  optional int32 altitude_gnss_feet = 13;
+}
+
+// Represents an update to a plane's state
+message PlaneUpdate {
+  // Type of update
+  UpdateType update_type = 1;
+  // The plane state (present for ADD and UPDATE types)
+  optional PlaneState plane = 2;
+  // ICAO address of removed plane (present for REMOVE type)
+  optional string removed_icao = 3;
+}
+
+enum UpdateType {
+  UPDATE_TYPE_UNSPECIFIED = 0;
+  // New plane appeared
+  UPDATE_TYPE_ADD = 1;
+  // Existing plane was updated
+  UPDATE_TYPE_UPDATE = 2;
+  // Plane was removed (timed out)
+  UPDATE_TYPE_REMOVE = 3;
+}
+
+// Request for all currently tracked planes
+message GetAllPlanesRequest {}
+
+// Response containing all currently tracked planes
+message GetAllPlanesResponse {
+  // All currently tracked planes
+  repeated PlaneState planes = 1;
+  // Unix timestamp (milliseconds) when this snapshot was taken
+  int64 snapshot_time_ms = 2;
+}
+
+// Request to stream plane updates
+message StreamUpdatesRequest {
+  // If true, send current state of all planes before streaming updates
+  bool include_initial_snapshot = 1;
+  // Minimum interval between updates per aircraft in milliseconds (default: 500ms)
+  // Updates for the same aircraft will be throttled to this rate
+  // Set to 0 to disable throttling and receive all updates immediately
+  optional uint32 update_interval_ms = 2;
+}
+
+// Service status information
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  // Number of currently tracked planes
+  uint32 plane_count = 1;
+  // Number of connected data sources
+  uint32 source_count = 2;
+  // List of connected source addresses
+  repeated string connected_sources = 3;
+  // Total messages processed since start
+  uint64 total_messages = 4;
+  // Service uptime in seconds
+  uint64 uptime_seconds = 5;
+}
+
+// ADS-B Plane Tracking Service
+service PlaneTrackingService {
+  // Get a snapshot of all currently tracked planes
+  rpc GetAllPlanes(GetAllPlanesRequest) returns (GetAllPlanesResponse);
+
+  // Stream continuous updates (additions, updates, removals)
+  rpc StreamUpdates(StreamUpdatesRequest) returns (stream PlaneUpdate);
+
+  // Get service status
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+}

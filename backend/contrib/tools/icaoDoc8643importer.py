@@ -92,7 +92,6 @@ def update_icao_designators(config: Config):
 
 def main():
     parser = argparse.ArgumentParser(description="Update ICAO Doc 8643 aircraft type designators in MongoDB from ICAO endpoint")
-    parser.add_argument("--config", default="config.json", help="Configuration file path")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
     
     args = parser.parse_args()
@@ -108,7 +107,7 @@ def main():
     
     # Load configuration
     try:
-        config = Config(args.config)
+        config = Config()
         logger.info("Configuration loaded successfully")
     except Exception as e:
         logger.error(f"Failed to load configuration: {e}")

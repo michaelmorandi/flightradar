@@ -18,30 +18,32 @@ A FastAPI-based backend for tracking and managing real-time ADS-B flight data wi
 4. **ADS-B Data Source** - dump1090 or Virtual Radar Server
 5. **MongoDB Integration** A MongoDB server to store flight data
 
-## Quick Start
+## Getting Started
 
 ### 1. Install Dependencies
 ```bash
-cd flightradar-backend
+cd backend
 uv sync
 ```
 
 ### 2. Configure Application
 
-#### Option A: Config File (Recommended)
-```bash
-# Copy sample config
-cp contrib/samples/config.json config.json
+Set the required environment variables:
 
-# Edit config.json with your settings
-```
-
-#### Option B: Environment Variables
 ```bash
 export MONGODB_URI="mongodb://localhost:27017/"
 export MONGODB_DB_NAME="flightradar"
 export SERVICE_URL="http://your-radar-server:8080"
-export SERVICE_TYPE="vrs"  # or "dump1090"
+export SERVICE_TYPE="dump1090"  # or "vrs"
+```
+
+Or create a `.env` file in the backend directory:
+
+```bash
+MONGODB_URI=mongodb://localhost:27017/
+MONGODB_DB_NAME=flightradar
+SERVICE_URL=http://your-radar-server:8080
+SERVICE_TYPE=dump1090
 ```
 
 ### 3. Initialize Database
@@ -51,31 +53,34 @@ uv run python flightradar.py initschema
 
 ### 4. Start Development Server
 ```bash
-# Standard development server
-uv run python -m uvicorn flightradar:app --host 0.0.0.0 --port 8000 --reload
-
-# Alternative command
 uv run uvicorn flightradar:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+The backend API will be available at http://localhost:8000
+
+- **API Documentation (Swagger)**: http://localhost:8000/docs
+- **API Documentation (ReDoc)**: http://localhost:8000/redoc
 
 ### 5. Test SSE Endpoints
 ```bash
 # Test live positions stream
-curl -N -H "Accept: text/event-stream" http://localhost:8000/api/v1/sse/positions/live
+curl -N -H "Accept: text/event-stream" http://localhost:8000/api/v1/positions/live/stream
 
 # Test flight-specific stream
-curl -N -H "Accept: text/event-stream" http://localhost:8000/api/v1/sse/flights/ABC123/positions
+curl -N -H "Accept: text/event-stream" http://localhost:8000/api/v1/flights/ABC123/positions/stream
 ```
 
 ## Configuration Options
 
+Note: This application reads configuration only from environment variables or a `.env` file. It does not support `config.json` or other file-based configuration formats.
+
 ### Core Settings
-| Option | Required | Default | Description |
+| Option (env var) | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `serviceUrl` | yes | - | URL to your radar service |
-| `type` | no | `vrs` | Service type: `vrs` or `dump1090` |
-| `dataFolder` | no | `resources` | Path to resources folder |
-| `militaryOnly` | no | `false` | Filter non-military aircraft |
+| `SERVICE_URL` | yes | - | URL to your radar service |
+| `SERVICE_TYPE` | no | `vrs` | Service type: `vrs` or `dump1090` |
+| `DATA_FOLDER` | no | `resources` | Path to resources folder |
+| `MIL_ONLY` | no | `false` | Filter non-military aircraft |
 
 ### Database Configuration
 | Option | Required | Default | Description |

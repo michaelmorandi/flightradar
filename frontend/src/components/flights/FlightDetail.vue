@@ -221,7 +221,7 @@ const currentAltitude = computed(() => {
 
 const currentGroundSpeed = computed(() => {
   if (currentPosition?.value?.gs !== undefined && currentPosition.value.gs !== null && currentPosition.value.gs >= 0) {
-    return `${currentPosition.value.gs} kts`;
+    return `${Math.round(currentPosition.value.gs)} kts`;
   }
 
   return undefined;
