@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="22.5px" height="30px" viewBox="0 0 15 20">
+  <!-- Default aircraft icon - Generic airplane -->
+  <polygon points="0,20 7.5,12 15,20 7.5,0 0,20"
+           fill="rgb(250, 255, 255)"
+           stroke="black"
+           stroke-width="1" />
+</svg>

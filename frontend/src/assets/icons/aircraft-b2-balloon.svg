@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="22.5px" height="30px" viewBox="0 0 15 20">
+  <!-- B2: Lighter-than-air - Balloon/Airship -->
+  <g fill="rgb(250, 255, 255)" stroke="black" stroke-width="0.8">
+    <!-- Envelope (balloon) -->
+    <ellipse cx="7.5" cy="5" rx="4.5" ry="4" />
+    <!-- Gore lines (balloon segments) -->
+    <path d="M 7.5,1 L 7.5,9" fill="none" stroke-width="0.5" />
+    <path d="M 5,2 Q 5,5 5.5,8.5" fill="none" stroke-width="0.4" />
+    <path d="M 10,2 Q 10,5 9.5,8.5" fill="none" stroke-width="0.4" />
+    <!-- Cables -->
+    <line x1="4" y1="8.5" x2="5" y2="13" stroke-width="0.6" />
+    <line x1="11" y1="8.5" x2="10" y2="13" stroke-width="0.6" />
+    <line x1="7.5" y1="9" x2="7.5" y2="13" stroke-width="0.6" />
+    <!-- Gondola/Basket -->
+    <rect x="5" y="13" width="5" height="3" rx="0.5" />
+    <!-- Burner (for hot air balloon) -->
+    <rect x="6.5" y="11.5" width="2" height="1.5" />
+    <!-- Propeller (for dirigible variant) -->
+    <circle cx="12" cy="5" r="1.2" fill="none" stroke-width="0.6" />
+    <line x1="11" y1="5" x2="13" y2="5" stroke-width="0.6" />
+  </g>
+</svg>

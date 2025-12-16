@@ -22,15 +22,18 @@ export class MarkerManager {
     this.onMarkerClickCallback = callback;
   }
 
-  updateMarker(id: string, coords: HereCoordinates, groundSpeed?: number, callsign?: string) {
+  updateMarker(id: string, coords: HereCoordinates, groundSpeed?: number, callsign?: string, category?: number) {
     if (this.markers.has(id)) {
       const marker = this.markers.get(id);
       marker?.updatePosition(coords, groundSpeed);
       if (callsign) {
         marker?.updateCallsign(callsign);
       }
+      if (category !== undefined) {
+        marker?.updateCategory(category);
+      }
     } else {
-      const marker = new AircraftMarker(id, coords, this.aircraftIcon, this.map, this.iconSvgMap, callsign);
+      const marker = new AircraftMarker(id, coords, this.aircraftIcon, this.map, this.iconSvgMap, callsign, category);
       marker.onPointerDown((event: any) => {
         if (this.onMarkerClickCallback) {
           this.onMarkerClickCallback(event.target.getData());
@@ -105,7 +108,7 @@ export class MarkerManager {
 
     positions.forEach((pos: TerrestialPosition, flightId: string) => {
       const coords = this.convertToHereCoords(pos, positions);
-      this.updateMarker(flightId, coords, pos.gs, pos.callsign);
+      this.updateMarker(flightId, coords, pos.gs, pos.callsign, pos.cat);
     });
 
     const now = new Date();

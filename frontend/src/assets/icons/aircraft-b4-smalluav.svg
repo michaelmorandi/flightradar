@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="22.5px" height="30px" viewBox="0 0 15 20">
+  <!-- B4: Small UAV/Fixed-wing drone -->
+  <g fill="rgb(250, 255, 255)" stroke="black" stroke-width="0.8">
+    <!-- Fuselage (compact) -->
+    <path d="M 7.5,2 L 8.5,7 L 8.5,14 L 7.5,15.5 L 6.5,14 L 6.5,7 Z" />
+    <!-- Wings (straight, high aspect ratio) -->
+    <rect x="0.5" y="7.5" width="14" height="1.8" rx="0.3" />
+    <!-- Pusher propeller -->
+    <circle cx="7.5" cy="15.5" r="1.2" fill="none" stroke-width="0.6" />
+    <line x1="6.5" y1="15.5" x2="8.5" y2="15.5" stroke-width="0.6" />
+    <line x1="7.5" y1="14.5" x2="7.5" y2="16.5" stroke-width="0.6" />
+    <!-- V-tail -->
+    <line x1="6.5" y1="14" x2="5" y2="17.5" stroke-width="0.8" />
+    <line x1="8.5" y1="14" x2="10" y2="17.5" stroke-width="0.8" />
+    <!-- Camera/sensor pod -->
+    <ellipse cx="7.5" cy="5" rx="1" ry="1.2" />
+  </g>
+</svg>
