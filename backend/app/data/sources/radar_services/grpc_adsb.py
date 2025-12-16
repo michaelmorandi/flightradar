@@ -92,6 +92,9 @@ class GrpcAdsb(RadarService):
 
         callsign = plane.callsign if plane.callsign else None
 
+        # Convert AircraftCategory enum to string name
+        category = adsb_pb2.AircraftCategory.Name(plane.category) if plane.category else None
+
         return PositionReport(
             icao24=plane.icao_address,
             lat=lat,
@@ -99,7 +102,8 @@ class GrpcAdsb(RadarService):
             alt=alt,
             gs=gs,
             track=track,
-            callsign=callsign
+            callsign=callsign,
+            category=category
         )
 
     def query_live_flights(self, filter_incomplete=True) -> Optional[List[PositionReport]]:

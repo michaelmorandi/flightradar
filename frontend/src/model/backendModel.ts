@@ -14,6 +14,7 @@ export interface TerrestialPosition {
   alt?: number;
   track?: number;
   gs?: number;
+  category?: string;
 }
 
 export interface Aircraft {

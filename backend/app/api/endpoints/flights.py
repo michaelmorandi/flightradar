@@ -263,6 +263,11 @@ def _format_position(position_data, include_gs: bool = True) -> dict:
         track = position_data.get("track") if isinstance(position_data, dict) else getattr(position_data, "track", None)
         if track is not None:
             formatted["track"] = track
+
+    category = position_data.get("category") if isinstance(position_data, dict) else getattr(position_data, "category", None)
+    if category is not None:
+        formatted["category"] = category
+
     return formatted
 
 

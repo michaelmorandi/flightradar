@@ -24,35 +24,37 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\nadsb.proto\x12\x04\x61\x64sb\"B\n\x08Position\x12\x10\n\x08latitude\x18\x01 \x01(\x01\x12\x11\n\tlongitude\x18\x02 \x01(\x01\x12\x11\n\ton_ground\x18\x03 \x01(\x08\"Z\n\x08Velocity\x12\x1a\n\x12ground_speed_knots\x18\x01 \x01(\x01\x12\x17\n\x0fheading_degrees\x18\x02 \x01(\x01\x12\x19\n\x11vertical_rate_fpm\x18\x03 \x01(\x05\"\xa8\x03\n\nPlaneState\x12\x14\n\x0cicao_address\x18\x01 \x01(\t\x12\x10\n\x08\x63\x61llsign\x18\x02 \x01(\t\x12%\n\x08position\x18\x03 \x01(\x0b\x32\x0e.adsb.PositionH\x00\x88\x01\x01\x12\x1a\n\raltitude_feet\x18\x04 \x01(\x05H\x01\x88\x01\x01\x12%\n\x08velocity\x18\x05 \x01(\x0b\x32\x0e.adsb.VelocityH\x02\x88\x01\x01\x12\x14\n\x0clast_seen_ms\x18\x06 \x01(\x03\x12\x15\n\rfirst_seen_ms\x18\x07 \x01(\x03\x12\x15\n\rmessage_count\x18\x08 \x01(\x04\x12\x0e\n\x06squawk\x18\t \x01(\t\x12(\n\temergency\x18\n \x01(\x0e\x32\x15.adsb.EmergencyStatus\x12\x10\n\x08\x63\x61tegory\x18\x0b \x01(\t\x12\x14\n\x0c\x61\x64sb_capable\x18\x0c \x01(\x08\x12\x1f\n\x12\x61ltitude_gnss_feet\x18\r \x01(\x05H\x03\x88\x01\x01\x42\x0b\n\t_positionB\x10\n\x0e_altitude_feetB\x0b\n\t_velocityB\x15\n\x13_altitude_gnss_feet\"\x90\x01\n\x0bPlaneUpdate\x12%\n\x0bupdate_type\x18\x01 \x01(\x0e\x32\x10.adsb.UpdateType\x12$\n\x05plane\x18\x02 \x01(\x0b\x32\x10.adsb.PlaneStateH\x00\x88\x01\x01\x12\x19\n\x0cremoved_icao\x18\x03 \x01(\tH\x01\x88\x01\x01\x42\x08\n\x06_planeB\x0f\n\r_removed_icao\"\x15\n\x13GetAllPlanesRequest\"R\n\x14GetAllPlanesResponse\x12 \n\x06planes\x18\x01 \x03(\x0b\x32\x10.adsb.PlaneState\x12\x18\n\x10snapshot_time_ms\x18\x02 \x01(\x03\"p\n\x14StreamUpdatesRequest\x12 \n\x18include_initial_snapshot\x18\x01 \x01(\x08\x12\x1f\n\x12update_interval_ms\x18\x02 \x01(\rH\x00\x88\x01\x01\x42\x15\n\x13_update_interval_ms\"\x12\n\x10GetStatusRequest\"\x89\x01\n\x11GetStatusResponse\x12\x13\n\x0bplane_count\x18\x01 \x01(\r\x12\x14\n\x0csource_count\x18\x02 \x01(\r\x12\x19\n\x11\x63onnected_sources\x18\x03 \x03(\t\x12\x16\n\x0etotal_messages\x18\x04 \x01(\x04\x12\x16\n\x0euptime_seconds\x18\x05 \x01(\x04*\xfe\x01\n\x0f\x45mergencyStatus\x12\x19\n\x15\x45MERGENCY_STATUS_NONE\x10\x00\x12\x1c\n\x18\x45MERGENCY_STATUS_GENERAL\x10\x01\x12\x1c\n\x18\x45MERGENCY_STATUS_MEDICAL\x10\x02\x12\x1d\n\x19\x45MERGENCY_STATUS_MIN_FUEL\x10\x03\x12\x1c\n\x18\x45MERGENCY_STATUS_NO_COMM\x10\x04\x12\x1b\n\x17\x45MERGENCY_STATUS_HIJACK\x10\x05\x12\x1b\n\x17\x45MERGENCY_STATUS_DOWNED\x10\x06\x12\x1d\n\x19\x45MERGENCY_STATUS_RESERVED\x10\x07*n\n\nUpdateType\x12\x1b\n\x17UPDATE_TYPE_UNSPECIFIED\x10\x00\x12\x13\n\x0fUPDATE_TYPE_ADD\x10\x01\x12\x16\n\x12UPDATE_TYPE_UPDATE\x10\x02\x12\x16\n\x12UPDATE_TYPE_REMOVE\x10\x03\x32\xdd\x01\n\x14PlaneTrackingService\x12\x45\n\x0cGetAllPlanes\x12\x19.adsb.GetAllPlanesRequest\x1a\x1a.adsb.GetAllPlanesResponse\x12@\n\rStreamUpdates\x12\x1a.adsb.StreamUpdatesRequest\x1a\x11.adsb.PlaneUpdate0\x01\x12<\n\tGetStatus\x12\x16.adsb.GetStatusRequest\x1a\x17.adsb.GetStatusResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\nadsb.proto\x12\x04\x61\x64sb\"P\n\x08Position\x12\x10\n\x08latitude\x18\x01 \x01(\x01\x12\x11\n\tlongitude\x18\x02 \x01(\x01\x12\x11\n\ton_ground\x18\x03 \x01(\x08\x12\x0c\n\x04mlat\x18\x04 \x01(\x08\"Z\n\x08Velocity\x12\x1a\n\x12ground_speed_knots\x18\x01 \x01(\x01\x12\x17\n\x0fheading_degrees\x18\x02 \x01(\x01\x12\x19\n\x11vertical_rate_fpm\x18\x03 \x01(\x05\"\xc0\x03\n\nPlaneState\x12\x14\n\x0cicao_address\x18\x01 \x01(\t\x12\x10\n\x08\x63\x61llsign\x18\x02 \x01(\t\x12%\n\x08position\x18\x03 \x01(\x0b\x32\x0e.adsb.PositionH\x00\x88\x01\x01\x12\x1a\n\raltitude_feet\x18\x04 \x01(\x05H\x01\x88\x01\x01\x12%\n\x08velocity\x18\x05 \x01(\x0b\x32\x0e.adsb.VelocityH\x02\x88\x01\x01\x12\x14\n\x0clast_seen_ms\x18\x06 \x01(\x03\x12\x15\n\rfirst_seen_ms\x18\x07 \x01(\x03\x12\x15\n\rmessage_count\x18\x08 \x01(\x04\x12\x0e\n\x06squawk\x18\t \x01(\t\x12(\n\temergency\x18\n \x01(\x0e\x32\x15.adsb.EmergencyStatus\x12(\n\x08\x63\x61tegory\x18\x0b \x01(\x0e\x32\x16.adsb.AircraftCategory\x12\x14\n\x0c\x61\x64sb_capable\x18\x0c \x01(\x08\x12\x1f\n\x12\x61ltitude_gnss_feet\x18\r \x01(\x05H\x03\x88\x01\x01\x42\x0b\n\t_positionB\x10\n\x0e_altitude_feetB\x0b\n\t_velocityB\x15\n\x13_altitude_gnss_feet\"\x90\x01\n\x0bPlaneUpdate\x12%\n\x0bupdate_type\x18\x01 \x01(\x0e\x32\x10.adsb.UpdateType\x12$\n\x05plane\x18\x02 \x01(\x0b\x32\x10.adsb.PlaneStateH\x00\x88\x01\x01\x12\x19\n\x0cremoved_icao\x18\x03 \x01(\tH\x01\x88\x01\x01\x42\x08\n\x06_planeB\x0f\n\r_removed_icao\"\x15\n\x13GetAllPlanesRequest\"R\n\x14GetAllPlanesResponse\x12 \n\x06planes\x18\x01 \x03(\x0b\x32\x10.adsb.PlaneState\x12\x18\n\x10snapshot_time_ms\x18\x02 \x01(\x03\"p\n\x14StreamUpdatesRequest\x12 \n\x18include_initial_snapshot\x18\x01 \x01(\x08\x12\x1f\n\x12update_interval_ms\x18\x02 \x01(\rH\x00\x88\x01\x01\x42\x15\n\x13_update_interval_ms\"\x12\n\x10GetStatusRequest\"\x89\x01\n\x11GetStatusResponse\x12\x13\n\x0bplane_count\x18\x01 \x01(\r\x12\x14\n\x0csource_count\x18\x02 \x01(\r\x12\x19\n\x11\x63onnected_sources\x18\x03 \x03(\t\x12\x16\n\x0etotal_messages\x18\x04 \x01(\x04\x12\x16\n\x0euptime_seconds\x18\x05 \x01(\x04*\xfe\x01\n\x0f\x45mergencyStatus\x12\x19\n\x15\x45MERGENCY_STATUS_NONE\x10\x00\x12\x1c\n\x18\x45MERGENCY_STATUS_GENERAL\x10\x01\x12\x1c\n\x18\x45MERGENCY_STATUS_MEDICAL\x10\x02\x12\x1d\n\x19\x45MERGENCY_STATUS_MIN_FUEL\x10\x03\x12\x1c\n\x18\x45MERGENCY_STATUS_NO_COMM\x10\x04\x12\x1b\n\x17\x45MERGENCY_STATUS_HIJACK\x10\x05\x12\x1b\n\x17\x45MERGENCY_STATUS_DOWNED\x10\x06\x12\x1d\n\x19\x45MERGENCY_STATUS_RESERVED\x10\x07*\xe3\x05\n\x10\x41ircraftCategory\x12\x1d\n\x19\x41IRCRAFT_CATEGORY_UNKNOWN\x10\x00\x12\x1d\n\x19\x41IRCRAFT_CATEGORY_NO_INFO\x10\x01\x12\x1b\n\x17\x41IRCRAFT_CATEGORY_LIGHT\x10\x02\x12\x1e\n\x1a\x41IRCRAFT_CATEGORY_MEDIUM_1\x10\x03\x12\x1e\n\x1a\x41IRCRAFT_CATEGORY_MEDIUM_2\x10\x04\x12\'\n#AIRCRAFT_CATEGORY_HIGH_VORTEX_LARGE\x10\x05\x12\x1b\n\x17\x41IRCRAFT_CATEGORY_HEAVY\x10\x06\x12&\n\"AIRCRAFT_CATEGORY_HIGH_PERFORMANCE\x10\x07\x12 \n\x1c\x41IRCRAFT_CATEGORY_ROTORCRAFT\x10\x08\x12\x1c\n\x18\x41IRCRAFT_CATEGORY_GLIDER\x10\t\x12&\n\"AIRCRAFT_CATEGORY_LIGHTER_THAN_AIR\x10\n\x12!\n\x1d\x41IRCRAFT_CATEGORY_PARACHUTIST\x10\x0b\x12 \n\x1c\x41IRCRAFT_CATEGORY_ULTRALIGHT\x10\x0c\x12\x19\n\x15\x41IRCRAFT_CATEGORY_UAV\x10\r\x12\x1b\n\x17\x41IRCRAFT_CATEGORY_SPACE\x10\x0e\x12\'\n#AIRCRAFT_CATEGORY_SURFACE_EMERGENCY\x10\x0f\x12%\n!AIRCRAFT_CATEGORY_SURFACE_SERVICE\x10\x10\x12$\n AIRCRAFT_CATEGORY_POINT_OBSTACLE\x10\x11\x12&\n\"AIRCRAFT_CATEGORY_CLUSTER_OBSTACLE\x10\x12\x12#\n\x1f\x41IRCRAFT_CATEGORY_LINE_OBSTACLE\x10\x13\x12\x1e\n\x1a\x41IRCRAFT_CATEGORY_RESERVED\x10\x14*n\n\nUpdateType\x12\x1b\n\x17UPDATE_TYPE_UNSPECIFIED\x10\x00\x12\x13\n\x0fUPDATE_TYPE_ADD\x10\x01\x12\x16\n\x12UPDATE_TYPE_UPDATE\x10\x02\x12\x16\n\x12UPDATE_TYPE_REMOVE\x10\x03\x32\xdd\x01\n\x14PlaneTrackingService\x12\x45\n\x0cGetAllPlanes\x12\x19.adsb.GetAllPlanesRequest\x1a\x1a.adsb.GetAllPlanesResponse\x12@\n\rStreamUpdates\x12\x1a.adsb.StreamUpdatesRequest\x1a\x11.adsb.PlaneUpdate0\x01\x12<\n\tGetStatus\x12\x16.adsb.GetStatusRequest\x1a\x17.adsb.GetStatusResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'adsb_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_EMERGENCYSTATUS']._serialized_start=1136
-  _globals['_EMERGENCYSTATUS']._serialized_end=1390
-  _globals['_UPDATETYPE']._serialized_start=1392
-  _globals['_UPDATETYPE']._serialized_end=1502
+  _globals['_EMERGENCYSTATUS']._serialized_start=1174
+  _globals['_EMERGENCYSTATUS']._serialized_end=1428
+  _globals['_AIRCRAFTCATEGORY']._serialized_start=1431
+  _globals['_AIRCRAFTCATEGORY']._serialized_end=2170
+  _globals['_UPDATETYPE']._serialized_start=2172
+  _globals['_UPDATETYPE']._serialized_end=2282
   _globals['_POSITION']._serialized_start=20
-  _globals['_POSITION']._serialized_end=86
-  _globals['_VELOCITY']._serialized_start=88
-  _globals['_VELOCITY']._serialized_end=178
-  _globals['_PLANESTATE']._serialized_start=181
-  _globals['_PLANESTATE']._serialized_end=605
-  _globals['_PLANEUPDATE']._serialized_start=608
-  _globals['_PLANEUPDATE']._serialized_end=752
-  _globals['_GETALLPLANESREQUEST']._serialized_start=754
-  _globals['_GETALLPLANESREQUEST']._serialized_end=775
-  _globals['_GETALLPLANESRESPONSE']._serialized_start=777
-  _globals['_GETALLPLANESRESPONSE']._serialized_end=859
-  _globals['_STREAMUPDATESREQUEST']._serialized_start=861
-  _globals['_STREAMUPDATESREQUEST']._serialized_end=973
-  _globals['_GETSTATUSREQUEST']._serialized_start=975
-  _globals['_GETSTATUSREQUEST']._serialized_end=993
-  _globals['_GETSTATUSRESPONSE']._serialized_start=996
-  _globals['_GETSTATUSRESPONSE']._serialized_end=1133
-  _globals['_PLANETRACKINGSERVICE']._serialized_start=1505
-  _globals['_PLANETRACKINGSERVICE']._serialized_end=1726
+  _globals['_POSITION']._serialized_end=100
+  _globals['_VELOCITY']._serialized_start=102
+  _globals['_VELOCITY']._serialized_end=192
+  _globals['_PLANESTATE']._serialized_start=195
+  _globals['_PLANESTATE']._serialized_end=643
+  _globals['_PLANEUPDATE']._serialized_start=646
+  _globals['_PLANEUPDATE']._serialized_end=790
+  _globals['_GETALLPLANESREQUEST']._serialized_start=792
+  _globals['_GETALLPLANESREQUEST']._serialized_end=813
+  _globals['_GETALLPLANESRESPONSE']._serialized_start=815
+  _globals['_GETALLPLANESRESPONSE']._serialized_end=897
+  _globals['_STREAMUPDATESREQUEST']._serialized_start=899
+  _globals['_STREAMUPDATESREQUEST']._serialized_end=1011
+  _globals['_GETSTATUSREQUEST']._serialized_start=1013
+  _globals['_GETSTATUSREQUEST']._serialized_end=1031
+  _globals['_GETSTATUSRESPONSE']._serialized_start=1034
+  _globals['_GETSTATUSRESPONSE']._serialized_end=1171
+  _globals['_PLANETRACKINGSERVICE']._serialized_start=2285
+  _globals['_PLANETRACKINGSERVICE']._serialized_end=2506
 # @@protoc_insertion_point(module_scope)

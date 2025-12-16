@@ -10,6 +10,8 @@ message Position {
   double longitude = 2;
   // True if this is a surface position (aircraft on ground)
   bool on_ground = 3;
+  // True if this position was computed using MLAT (multilateration)
+  bool mlat = 4;
 }
 
 // Velocity information for an aircraft
@@ -32,6 +34,35 @@ enum EmergencyStatus {
   EMERGENCY_STATUS_HIJACK = 5;       // Unlawful interference (7500)
   EMERGENCY_STATUS_DOWNED = 6;       // Downed aircraft
   EMERGENCY_STATUS_RESERVED = 7;
+}
+
+// Aircraft category from ADS-B identification message
+enum AircraftCategory {
+  AIRCRAFT_CATEGORY_UNKNOWN = 0;
+  AIRCRAFT_CATEGORY_NO_INFO = 1;
+  // Category Set A (TC=4)
+  AIRCRAFT_CATEGORY_LIGHT = 2;              // < 15500 lbs
+  AIRCRAFT_CATEGORY_MEDIUM_1 = 3;           // 15500 to 75000 lbs
+  AIRCRAFT_CATEGORY_MEDIUM_2 = 4;           // 75000 to 300000 lbs
+  AIRCRAFT_CATEGORY_HIGH_VORTEX_LARGE = 5;  // High wake vortex aircraft
+  AIRCRAFT_CATEGORY_HEAVY = 6;              // > 300000 lbs
+  AIRCRAFT_CATEGORY_HIGH_PERFORMANCE = 7;   // > 5g acceleration and > 400 kts
+  AIRCRAFT_CATEGORY_ROTORCRAFT = 8;
+  // Category Set B (TC=3)
+  AIRCRAFT_CATEGORY_GLIDER = 9;
+  AIRCRAFT_CATEGORY_LIGHTER_THAN_AIR = 10;
+  AIRCRAFT_CATEGORY_PARACHUTIST = 11;
+  AIRCRAFT_CATEGORY_ULTRALIGHT = 12;
+  AIRCRAFT_CATEGORY_UAV = 13;
+  AIRCRAFT_CATEGORY_SPACE = 14;
+  // Category Set C (TC=2)
+  AIRCRAFT_CATEGORY_SURFACE_EMERGENCY = 15;
+  AIRCRAFT_CATEGORY_SURFACE_SERVICE = 16;
+  AIRCRAFT_CATEGORY_POINT_OBSTACLE = 17;
+  AIRCRAFT_CATEGORY_CLUSTER_OBSTACLE = 18;
+  AIRCRAFT_CATEGORY_LINE_OBSTACLE = 19;
+  // Reserved
+  AIRCRAFT_CATEGORY_RESERVED = 20;
 }
 
 // Complete state of a tracked aircraft
@@ -57,7 +88,7 @@ message PlaneState {
   // Emergency/priority status
   EmergencyStatus emergency = 10;
   // Aircraft category (from identification message)
-  string category = 11;
+  AircraftCategory category = 11;
   // True if aircraft has ADS-B capability (vs Mode-S only)
   bool adsb_capable = 12;
   // GNSS altitude in feet (if available, more accurate than barometric)

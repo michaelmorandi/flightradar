@@ -1,5 +1,5 @@
 class PositionReport:
-    def __init__(self, icao24: str, lat, lon, alt, gs=None, track=None, callsign=None):  # gs = ground speed
+    def __init__(self, icao24: str, lat, lon, alt, gs=None, track=None, callsign=None, category=None):  # gs = ground speed
         self.icao24 = icao24
         self.lat = lat
         self.lon = lon
@@ -7,6 +7,7 @@ class PositionReport:
         self.gs = gs  # ground speed
         self.track = track
         self.callsign = callsign
+        self.category = category
 
     def __eq__(self, other):
 
@@ -20,4 +21,5 @@ class PositionReport:
             and self.alt == other.alt \
             and self.gs == other.gs \
             and self.track == other.track \
-            and self.callsign == other.callsign
+            and self.callsign == other.callsign \
+            and self.category == other.category
