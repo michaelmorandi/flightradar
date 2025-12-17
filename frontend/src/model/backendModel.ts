@@ -14,7 +14,7 @@ export interface TerrestialPosition {
   alt?: number;
   track?: number;
   gs?: number;
-  category?: string;
+  cat?: number;  // Aircraft category (compact numeric encoding from AircraftCategory enum)
 }
 
 export interface Aircraft {

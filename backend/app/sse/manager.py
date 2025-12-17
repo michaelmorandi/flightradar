@@ -128,6 +128,110 @@ class SSEConnectionManager:
                     f"Removed {len(disconnected_clients)} disconnected clients. {len(self.active_connections)} remaining."
                 )
 
+    async def broadcast_categories(self, categories: Dict[str, int]):
+        """
+        Broadcast aircraft category changes to all connected position clients
+
+        Args:
+            categories: Dictionary of flight_id -> category_number
+        """
+        # Make a thread-safe copy of the connections
+        with self._lock:
+            if not self.active_connections:
+                logger.debug("No active connections, skipping category broadcast")
+                return
+            # Get only position clients
+            position_clients = {
+                client_id: client
+                for client_id, client in self.active_connections.items()
+                if client.type == "positions"
+            }
+
+        # Validate categories is not empty
+        if not categories:
+            logger.warning("Attempted to broadcast empty categories, skipping")
+            return
+
+        # Create a message with category updates
+        message = {
+            "categories": categories
+        }
+
+        logger.debug(f"Broadcasting {len(categories)} category updates to {len(position_clients)} connected clients")
+
+        disconnected_clients = []
+
+        # Broadcast to all connected position clients
+        for client_id, client in position_clients.items():
+            try:
+                await client.queue.put({
+                    "event": "categories",
+                    "data": message
+                })
+            except Exception as e:
+                logger.error(f"Error sending categories to SSE client {client_id}: {str(e)}")
+                disconnected_clients.append(client_id)
+
+        # Remove disconnected connections
+        if disconnected_clients:
+            with self._lock:
+                for client_id in disconnected_clients:
+                    if client_id in self.active_connections:
+                        del self.active_connections[client_id]
+                logger.debug(f"Removed {len(disconnected_clients)} disconnected clients")
+
+    async def broadcast_callsigns(self, callsigns: Dict[str, str]):
+        """
+        Broadcast aircraft callsign changes to all connected position clients
+
+        Args:
+            callsigns: Dictionary of flight_id -> callsign
+        """
+        # Make a thread-safe copy of the connections
+        with self._lock:
+            if not self.active_connections:
+                logger.debug("No active connections, skipping callsign broadcast")
+                return
+            # Get only position clients
+            position_clients = {
+                client_id: client
+                for client_id, client in self.active_connections.items()
+                if client.type == "positions"
+            }
+
+        # Validate callsigns is not empty
+        if not callsigns:
+            logger.warning("Attempted to broadcast empty callsigns, skipping")
+            return
+
+        # Create a message with callsign updates
+        message = {
+            "callsigns": callsigns
+        }
+
+        logger.debug(f"Broadcasting {len(callsigns)} callsign updates to {len(position_clients)} connected clients")
+
+        disconnected_clients = []
+
+        # Broadcast to all connected position clients
+        for client_id, client in position_clients.items():
+            try:
+                await client.queue.put({
+                    "event": "callsigns",
+                    "data": message
+                })
+            except Exception as e:
+                logger.error(f"Error sending callsigns to SSE client {client_id}: {str(e)}")
+                disconnected_clients.append(client_id)
+
+        # Remove disconnected connections
+        if disconnected_clients:
+            with self._lock:
+                for client_id in disconnected_clients:
+                    if client_id in self.active_connections:
+                        del self.active_connections[client_id]
+                logger.debug(f"Removed {len(disconnected_clients)} disconnected clients")
+
     async def send_flight_position(self, flight_id: str, position_data: Dict[str, Any]):
         """
         Send position data to clients subscribed to a specific flight

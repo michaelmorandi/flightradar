@@ -4,7 +4,7 @@
 echo "Replacing env vars in JS files..."
 
 # Set defaults if not provided
-export VITE_FLIGHT_API_URL=${VITE_FLIGHT_API_URL:-https://flights-api.example.com/api/v1}
+export VITE_FLIGHT_API_URL=${VITE_FLIGHT_API_URL:-}
 export VITE_HERE_API_KEY=${VITE_HERE_API_KEY:-}
 export VITE_FLIGHT_API_USER=${VITE_FLIGHT_API_USER:-}
 export VITE_FLIGHT_API_PASSWORD=${VITE_FLIGHT_API_PASSWORD:-}

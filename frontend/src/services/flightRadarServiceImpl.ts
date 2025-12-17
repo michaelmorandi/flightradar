@@ -187,7 +187,7 @@ export class FlightRadarServiceImpl implements FlightRadarService {
   }
 
   public connect(): EventSource {
-    const url = this.getStreamUrl('positions/live/stream');
+    const url = this.getStreamUrl('live/stream');
 
     this.positionsEventSource = new EventSource(url);
 
@@ -210,6 +210,24 @@ export class FlightRadarServiceImpl implements FlightRadarService {
 
     this.positionsEventSource.addEventListener('heartbeat', (event) => {
       console.debug('Received heartbeat:', event.data);
+    });
+
+    this.positionsEventSource.addEventListener('categories', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        this.processCategoriesData(data);
+      } catch (error) {
+        console.error('Error processing categories message:', error);
+      }
+    });
+
+    this.positionsEventSource.addEventListener('callsigns', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        this.processCallsignsData(data);
+      } catch (error) {
+        console.error('Error processing callsigns message:', error);
+      }
     });
 
     return this.positionsEventSource;
@@ -268,6 +286,56 @@ export class FlightRadarServiceImpl implements FlightRadarService {
   }
 
   private positionsCallback: ((positions: Map<string, TerrestialPosition>) => void) | null = null;
+
+  private processCategoriesData(data: any): void {
+    if (!data.categories) return;
+
+    // Update categories in existing position data
+    Object.entries<number>(data.categories).forEach(([flightId, category]) => {
+      if (this.positionsData.has(flightId)) {
+        const existingData = this.positionsData.get(flightId);
+        if (existingData) {
+          const { lastUpdate, ...position } = existingData;
+          this.positionsData.set(flightId, { ...position, cat: category, lastUpdate });
+        }
+      }
+    });
+
+    // Notify callback if registered
+    if (this.positionsCallback) {
+      const result = new Map<string, TerrestialPosition>();
+      this.positionsData.forEach((value, key) => {
+        const { lastUpdate: _, ...position } = value;
+        result.set(key, position);
+      });
+      this.positionsCallback(result);
+    }
+  }
+
+  private processCallsignsData(data: any): void {
+    if (!data.callsigns) return;
+
+    // Update callsigns in existing position data
+    Object.entries<string>(data.callsigns).forEach(([flightId, callsign]) => {
+      if (this.positionsData.has(flightId)) {
+        const existingData = this.positionsData.get(flightId);
+        if (existingData) {
+          const { lastUpdate, ...position } = existingData;
+          this.positionsData.set(flightId, { ...position, callsign, lastUpdate });
+        }
+      }
+    });
+
+    // Notify callback if registered
+    if (this.positionsCallback) {
+      const result = new Map<string, TerrestialPosition>();
+      this.positionsData.forEach((value, key) => {
+        const { lastUpdate: _, ...position } = value;
+        result.set(key, position);
+      });
+      this.positionsCallback(result);
+    }
+  }
 
   private processPositionsData(data: any): void {
     if (!this.positionsCallback) return;

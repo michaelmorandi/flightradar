@@ -63,8 +63,8 @@ The backend API will be available at http://localhost:8000
 
 ### 5. Test SSE Endpoints
 ```bash
-# Test live positions stream
-curl -N -H "Accept: text/event-stream" http://localhost:8000/api/v1/positions/live/stream
+# Test live flight data stream (positions, categories, callsigns)
+curl -N -H "Accept: text/event-stream" http://localhost:8000/api/v1/live/stream
 
 # Test flight-specific stream
 curl -N -H "Accept: text/event-stream" http://localhost:8000/api/v1/flights/ABC123/positions/stream
@@ -131,8 +131,8 @@ The Docker image automatically captures the git tag (or commit hash if no tag ex
 - `GET /api/v1/ready` - Readiness check
 
 ### Server-Sent Events (SSE)
-- `GET /api/v1/positions/live/stream `- Real-time position updates
-- `GET /api/v1/flights/{flight_id}/positions/stream` - Flight-specific updates
+- `GET /api/v1/live/stream` - Real-time flight data stream (positions, categories, callsigns)
+- `GET /api/v1/flights/{flight_id}/positions/stream` - Flight-specific position updates
 
 ### Interactive API Documentation
 - **Swagger UI**: http://localhost:8000/docs

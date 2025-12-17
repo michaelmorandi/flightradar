@@ -166,9 +166,9 @@ async def get_flight(flight_id: str, mongodb: Database = Depends(get_mongodb)):
         raise HTTPException(status_code=400, detail=f"Invalid flight ID format: {str(e)}")
 
 
-@router.get('/positions/live/stream')
+@router.get('/live/stream')
 async def sse_all_positions(request: Request):
-    """SSE endpoint for real-time position updates"""
+    """SSE endpoint for real-time flight data (positions, categories, callsigns)"""
     client_id = str(uuid.uuid4())
     app = request.app
     
@@ -196,8 +196,24 @@ async def sse_all_positions(request: Request):
         
         try:
             # Send initial positions immediately after connection
+            from ...core.models.position_report import PositionReport
+
             cached_flights = app.state.updater.get_cached_flights()
-            initial_positions = {str(k): v.__dict__ for k, v in cached_flights.items()}
+            initial_positions = {str(k): _format_position(v) for k, v in cached_flights.items()}
+
+            # Collect initial categories
+            initial_categories = {}
+            for flight_id, pos in cached_flights.items():
+                if pos.category is not None:
+                    category_num = PositionReport.CATEGORY_MAP.get(pos.category)
+                    if category_num is not None:
+                        initial_categories[str(flight_id)] = category_num
+
+            # Collect initial callsigns
+            initial_callsigns = {}
+            for flight_id, pos in cached_flights.items():
+                if pos.callsign is not None:
+                    initial_callsigns[str(flight_id)] = pos.callsign
 
             # Send initial data
             initial_message = {
@@ -205,8 +221,22 @@ async def sse_all_positions(request: Request):
                 "count": len(initial_positions),
                 "positions": initial_positions
             }
-            
+
             yield f"event: positions\ndata: {json.dumps(initial_message)}\n\n"
+
+            # Send initial categories if any exist
+            if initial_categories:
+                categories_message = {
+                    "categories": initial_categories
+                }
+                yield f"event: categories\ndata: {json.dumps(categories_message)}\n\n"
+
+            # Send initial callsigns if any exist
+            if initial_callsigns:
+                callsigns_message = {
+                    "callsigns": initial_callsigns
+                }
+                yield f"event: callsigns\ndata: {json.dumps(callsigns_message)}\n\n"
             
             # Process messages from queue
             while True:
@@ -250,6 +280,8 @@ async def sse_all_positions(request: Request):
 
 def _format_position(position_data, include_gs: bool = True) -> dict:
     """Helper to format a position dict with consistent structure"""
+    from ...core.models.position_report import PositionReport
+
     formatted = {
         "lat": position_data.get("lat") if isinstance(position_data, dict) else position_data.lat,
         "lon": position_data.get("lon") if isinstance(position_data, dict) else position_data.lon,
@@ -266,7 +298,10 @@ def _format_position(position_data, include_gs: bool = True) -> dict:
 
     category = position_data.get("category") if isinstance(position_data, dict) else getattr(position_data, "category", None)
     if category is not None:
-        formatted["category"] = category
+        # Convert category string to compact numeric representation
+        category_num = PositionReport.CATEGORY_MAP.get(category)
+        if category_num is not None:
+            formatted["cat"] = category_num
 
     return formatted
 

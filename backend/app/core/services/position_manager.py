@@ -14,14 +14,20 @@ class PositionManager:
         self.flight_lastpos_map = dict()
         self._changed_flight_ids = set()
         self._positions_changed = False
+        self.flight_category_map = dict()  # Track last known category per flight
+        self._category_changes = dict()  # Track category changes for SSE
+        self.flight_callsign_map = dict()  # Track last known callsign per flight
+        self._callsign_changes = dict()  # Track callsign changes for SSE
 
     def initialize(self, repository):
         self.repository = repository
-        
+
     def clear_changes(self):
         """Reset change tracking"""
         self._positions_changed = False
         self._changed_flight_ids.clear()
+        self._category_changes.clear()
+        self._callsign_changes.clear()
         
     def add_positions(self, positions: List[PositionReport], flight_manager):
         """Inserts positions into the database with highly optimized batch processing"""
@@ -103,13 +109,32 @@ class PositionManager:
             icao24 = pos.icao24
             flight_id = flight_id_by_icao[icao24]
             pos_hash = position_hashes[icao24]
-            
+
+            # Check for category changes
+            if pos.category is not None:
+                last_category = self.flight_category_map.get(flight_id)
+                if last_category != pos.category:
+                    # Category changed - track it
+                    self.flight_category_map[flight_id] = pos.category
+                    # Convert to compact numeric format
+                    category_num = PositionReport.CATEGORY_MAP.get(pos.category)
+                    if category_num is not None:
+                        self._category_changes[str(flight_id)] = category_num
+
+            # Check for callsign changes
+            if pos.callsign is not None:
+                last_callsign = self.flight_callsign_map.get(flight_id)
+                if last_callsign != pos.callsign:
+                    # Callsign changed - track it
+                    self.flight_callsign_map[flight_id] = pos.callsign
+                    self._callsign_changes[str(flight_id)] = pos.callsign
+
             if pos_hash in self.positions_hash:
                 continue
-                
-            new_hashes.add(pos_hash)            
+
+            new_hashes.add(pos_hash)
             store_position = True
-            
+
             if flight_id in self.flight_lastpos_map:
                 last_pos = self.flight_lastpos_map[flight_id]
 
@@ -118,20 +143,20 @@ class PositionManager:
                     round(last_pos.lon, 5),
                     last_pos.alt
                 ))
-                
+
                 if last_pos_hash == pos_hash:
                     store_position = False
-            
+
             if store_position:
-                
+
                 # Update in-memory cache immediately
                 flight_manager.flight_last_contact[flight_id] = timestamp
                 self.flight_lastpos_map[flight_id] = pos
-                
+
                 # Mark for WebSocket notification
                 self._positions_changed = True
                 self._changed_flight_ids.add(str(flight_id))
-                
+
                 position_doc = {
                     "flight_id": ObjectId(flight_id),
                     "lat": pos.lat,
@@ -140,9 +165,9 @@ class PositionManager:
                     "track": pos.track,
                     "timestmp": timestamp
                 }
-                
+
                 positions_to_insert.append(position_doc)
-                
+
                 flight_updates.append((flight_id, timestamp))
         
         self.positions_hash.update(new_hashes)
@@ -174,7 +199,23 @@ class PositionManager:
     def has_positions_changed(self):
         """Check if positions have changed since last update"""
         return self._positions_changed
-        
+
     def get_changed_flight_ids(self):
         """Get the set of flight IDs that have changed positions"""
         return self._changed_flight_ids
+
+    def get_category_changes(self):
+        """Get the dictionary of flight IDs with changed categories"""
+        return self._category_changes
+
+    def has_category_changes(self):
+        """Check if any categories have changed since last update"""
+        return len(self._category_changes) > 0
+
+    def get_callsign_changes(self):
+        """Get the dictionary of flight IDs with changed callsigns"""
+        return self._callsign_changes
+
+    def has_callsign_changes(self):
+        """Check if any callsigns have changed since last update"""
+        return len(self._callsign_changes) > 0

@@ -148,6 +148,18 @@ class FlightUpdaterCoordinator:
                     logger.debug(f"Broadcasting {changed_count} changed positions to SSE clients")
                     self._sse_notifier.notify_position_changes(all_cached_flights, changed_flight_ids)
 
+                # Broadcast category changes separately if any occurred
+                if has_callbacks and self._position_manager.has_category_changes():
+                    category_changes = self._position_manager.get_category_changes()
+                    logger.debug(f"Broadcasting {len(category_changes)} category changes to SSE clients")
+                    self._sse_notifier.notify_category_changes(category_changes)
+
+                # Broadcast callsign changes separately if any occurred
+                if has_callbacks and self._position_manager.has_callsign_changes():
+                    callsign_changes = self._position_manager.get_callsign_changes()
+                    logger.debug(f"Broadcasting {len(callsign_changes)} callsign changes to SSE clients")
+                    self._sse_notifier.notify_callsign_changes(callsign_changes)
+
             except (KeyboardInterrupt, SystemExit):
                 raise
             except Exception as e:
