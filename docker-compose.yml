@@ -1,0 +1,43 @@
+services:
+  flightradar:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flightradar
+    ports:
+      - "8080:80"      # Frontend via nginx
+      - "8083:8083"    # Backend API direct access
+    env_file:
+      - .env  # Docker Compose will read from .env file in the same directory
+    environment:
+      # Frontend environment variables (can override .env file values)
+      - VITE_FLIGHT_API_URL=${VITE_FLIGHT_API_URL}
+      - VITE_HERE_API_KEY=${VITE_HERE_API_KEY}
+      - VITE_FLIGHT_API_USER=${VITE_FLIGHT_API_USER}
+      - VITE_FLIGHT_API_PASSWORD=${VITE_FLIGHT_API_PASSWORD}
+      - VITE_MOCK_DATA=${VITE_MOCK_DATA}
+      - VITE_ENABLE_INTERPOLATION=${VITE_ENABLE_INTERPOLATION}
+
+      # Backend environment variables (can override .env file values)
+      - MONGODB_URI=${MONGODB_URI}
+      - MONGODB_DB_NAME=${MONGODB_DB_NAME}
+      - GRPC_SERVER_ADDRESS=${GRPC_SERVER_ADDRESS}
+      - SERVICE_TYPE=${SERVICE_TYPE}
+      - DATA_FOLDER=${DATA_FOLDER}
+      - MIL_ONLY=${MIL_ONLY}
+      - DB_RETENTION_MIN=${DB_RETENTION_MIN}
+      - UNKNOWN_AIRCRAFT_CRAWLING=${UNKNOWN_AIRCRAFT_CRAWLING}
+    restart: unless-stopped
+
+  # Uncomment if you need MongoDB
+  # mongodb:
+  #   image: mongo:latest
+  #   container_name: flightradar-mongo
+  #   ports:
+  #     - "27017:27017"
+  #   volumes:
+  #     - mongodb_data:/data/db
+  #   restart: unless-stopped
+
+# volumes:
+#   mongodb_data:
