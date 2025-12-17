@@ -27,6 +27,7 @@ declare let H: {
 
 export class AircraftIcon {
   private aircraftIcon: HereDomIcon;
+  private popoverMap: Map<string, HTMLElement> = new Map();
 
   public static readonly INACTIVE_COLOR = '250, 255, 255';
   public static readonly HIGHLIGHT_COLOR = '250, 127, 0';
@@ -73,6 +74,7 @@ export class AircraftIcon {
 
         const popover = clonedElement.querySelector('.aircraft-popover') as HTMLElement;
         if (popover) {
+          this.popoverMap.set(flightId, popover);
           const callsign = this.callsignMap.get(flightId);
           popover.textContent = callsign || flightId;
         }
@@ -90,8 +92,12 @@ export class AircraftIcon {
         });
       },
       onDetach: (clonedElement: HTMLElement, domIcon: unknown, domMarker: { getData(): string }) => {
-        if (this.iconSvgMap.has(domMarker.getData())) {
-          this.iconSvgMap.delete(domMarker.getData());
+        const flightId = domMarker.getData();
+        if (this.iconSvgMap.has(flightId)) {
+          this.iconSvgMap.delete(flightId);
+        }
+        if (this.popoverMap.has(flightId)) {
+          this.popoverMap.delete(flightId);
         }
       },
     });
@@ -103,6 +109,11 @@ export class AircraftIcon {
 
   public setCallsign(flightId: string, callsign: string) {
     this.callsignMap.set(flightId, callsign);
+
+    const popover = this.popoverMap.get(flightId);
+    if (popover) {
+      popover.textContent = callsign;
+    }
   }
 }
 
@@ -227,14 +238,6 @@ export class AircraftMarker {
     if (this.callsign !== callsign) {
       this.callsign = callsign;
       this.aircraftIcon.setCallsign(this.flightId, callsign);
-
-      const markerElement = (this.marker as any).wb;
-      if (markerElement) {
-        const popover = markerElement.querySelector('.aircraft-popover') as HTMLElement;
-        if (popover) {
-          popover.textContent = callsign;
-        }
-      }
     }
   }
 
