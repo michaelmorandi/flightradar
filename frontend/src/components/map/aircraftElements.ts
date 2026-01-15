@@ -67,7 +67,7 @@ export class AircraftIcon {
     aircraftDomIconElement.style.position = 'relative';
 
     aircraftDomIconElement.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="22.5px" height="30px" style="position: absolute; left: -11.25px; top: -15px; will-change: transform; backface-visibility: hidden;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="11.25px" height="15px" style="position: absolute; left: -5.625px; top: -7.5px; will-change: transform; backface-visibility: hidden;" viewBox="0 0 15 20">
         <polygon points="0,20 7.5,12 15,20 7.5,0 0,20" fill="rgb(${AircraftIcon.INACTIVE_COLOR})" stroke="black" stroke-width="1" />
       </svg>
       <div class="aircraft-popover" style="
@@ -383,8 +383,13 @@ export class AircraftMarker {
       const width = parseFloat(newSvg.getAttribute('width') || '22.5');
       const height = parseFloat(newSvg.getAttribute('height') || '30');
 
+      // Scale down default icon to 50%
+      const scale = category === 'default' ? 0.5 : 1;
+      const scaledWidth = width * scale;
+      const scaledHeight = height * scale;
+
       // Apply positioning and optimization styles once
-      newSvgElement.style.cssText = `position: absolute; left: ${-width / 2}px; top: ${-height / 2}px; will-change: transform; backface-visibility: hidden;`;
+      newSvgElement.style.cssText = `position: absolute; left: ${-scaledWidth / 2}px; top: ${-scaledHeight / 2}px; width: ${scaledWidth}px; height: ${scaledHeight}px; will-change: transform; backface-visibility: hidden;`;
 
       // Cache with optimized structure - this handles all color operations
       this.aircraftIcon.cacheSvgForFlight(this.flightId, newSvgElement, AircraftIcon.INACTIVE_COLOR);
@@ -450,12 +455,14 @@ export class AircraftMarker {
   public updatePosition(coords: HereCoordinates, groundSpeed?: number) {
     this.interpolator.addPositionUpdate(coords, groundSpeed);
 
-    if (this.iconSvgMap.has(this.flightId) && coords.heading != null) {
+    // Only update rotation if we have a valid heading (not undefined)
+    if (this.iconSvgMap.has(this.flightId) && coords.heading !== undefined) {
       const svgElement = this.iconSvgMap.get(this.flightId);
       if (svgElement) {
         const lastRotation = this.aircraftIcon.getLastRotation(this.flightId);
+        // Only update DOM if rotation actually changed
         if (lastRotation !== coords.heading) {
-          svgElement.style.transform = 'rotate(' + coords.heading + 'deg)';
+          svgElement.style.transform = `rotate(${coords.heading}deg)`;
           this.aircraftIcon.setLastRotation(this.flightId, coords.heading);
         }
       }
@@ -489,12 +496,14 @@ export class AircraftMarker {
           this.marker.setGeometry(interpolatedPos);
           this.lastRenderedPosition = { ...interpolatedPos };
 
-          if (this.iconSvgMap.has(this.flightId) && interpolatedPos.heading != null) {
+          // Only update rotation if we have a valid heading (not undefined)
+          if (this.iconSvgMap.has(this.flightId) && interpolatedPos.heading !== undefined) {
             const svgElement = this.iconSvgMap.get(this.flightId);
             if (svgElement) {
               const lastRotation = this.aircraftIcon.getLastRotation(this.flightId);
+              // Only update DOM if rotation actually changed
               if (lastRotation !== interpolatedPos.heading) {
-                svgElement.style.transform = 'rotate(' + interpolatedPos.heading + 'deg)';
+                svgElement.style.transform = `rotate(${interpolatedPos.heading}deg)`;
                 this.aircraftIcon.setLastRotation(this.flightId, interpolatedPos.heading);
               }
             }

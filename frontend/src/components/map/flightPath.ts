@@ -34,7 +34,7 @@ interface HerePolyline {
 export interface HereCoordinates {
   lat: number;
   lng: number;
-  heading: number;
+  heading?: number; // undefined means no valid heading - aircraft should not be displayed
 }
 
 export class FlightPath {

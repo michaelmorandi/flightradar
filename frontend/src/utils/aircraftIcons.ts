@@ -114,8 +114,8 @@ export async function loadIconSvg(category: AircraftCategory): Promise<string> {
     if (category !== 'default') {
       return loadIconSvg('default');
     }
-    // If even default fails, return a simple fallback SVG
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="15px" height="20px">
+    // If even default fails, return a simple fallback SVG (scaled to 50%)
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="11.25px" height="15px" viewBox="0 0 15 20">
       <polygon points="0,20 7.5,12 15,20 7.5,0 0,20" fill="rgb(250, 255, 255)" stroke="black" stroke-width="1" />
     </svg>`;
   }
@@ -190,14 +190,19 @@ export function determineAircraftCategory(aircraftType?: string, icaoType?: stri
   }
 
   // Light aircraft (single engine, small twins)
-  if (type.includes('C172') || type.includes('PA') || type.includes('C182') ||
-      type.includes('SR2') || type.length <= 4) {
+  if (type.includes('C172') || type.includes('C182') || type.includes('SR2') ||
+      type.startsWith('PA') || type.startsWith('C1')) {
     return 'A1';
   }
 
-  // Default to large if it looks like a commercial aircraft type code
+  // Default to large if it looks like a commercial aircraft type code (4-char ICAO code)
   if (type.length === 4 && /^[A-Z0-9]+$/.test(type)) {
     return 'A3';
+  }
+
+  // Short codes (3 chars or less) are typically light aircraft
+  if (type.length <= 3) {
+    return 'A1';
   }
 
   return 'default';

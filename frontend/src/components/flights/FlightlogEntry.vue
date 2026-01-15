@@ -16,9 +16,9 @@
 
 <script setup lang="ts">
 import { Aircraft, Flight } from '@/model/backendModel';
-import { FlightRadarService } from '@/services/flightRadarService';
+import { getFlightApiService } from '@/services/flightApiService';
 import { silhouetteUrl } from '@/components/aircraftIcon';
-import { computed, inject, onMounted, ref, PropType } from 'vue';
+import { computed, onMounted, ref, PropType } from 'vue';
 import { truncate } from '@/utils/string';
 import { differenceInMinutes, differenceInHours, startOfDay, format } from 'date-fns';
 
@@ -26,17 +26,18 @@ const props = defineProps({
   flight: { type: Object as PropType<Flight>, required: true },
 });
 
-const frService = inject('frService') as FlightRadarService;
+const apiService = getFlightApiService();
 
 const aircraft = ref<Aircraft>({ icao24: '' });
 
 onMounted(async () => {
   try {
-    frService.getAircraft(props.flight.icao24).subscribe((ac) => {
+    const ac = await apiService.getAircraft(props.flight.icao24);
+    if (ac) {
       aircraft.value = ac;
-    });
+    }
   } catch (err) {
-    //console.debug(`Could not obtain details for ${props.flight.icao24}`);
+    // Aircraft details not available
   }
 });
 

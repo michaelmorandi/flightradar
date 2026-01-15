@@ -27,7 +27,7 @@
     </div>
     <div class="row" v-if="aircraft">
       <div class="col">
-        <DetailField :label="typeLabel" :text="aircraft ? aircraft.type : null" />       
+        <DetailField :label="typeLabel" :text="aircraft ? aircraft.type : null" :tooltip="categoryTooltip" />
       </div>
     </div>
     <div class="row" v-if="aircraft">
@@ -40,10 +40,13 @@
 
 <script setup lang="ts">
 import DetailField from '@/components/flights/DetailField.vue';
-import { Flight, Aircraft, TerrestialPosition } from '@/model/backendModel';
-import { FlightRadarService } from '@/services/flightRadarService';
-import { computed, inject, watch, ref, onMounted, onBeforeUnmount } from 'vue';
+import { Flight, Aircraft } from '@/model/backendModel';
+import { getFlightApiService } from '@/services/flightApiService';
+import { getDataIngestionService } from '@/services/dataIngestionService';
+import { useAircraftStore, useFlightHistoryStore } from '@/stores/aircraft';
+import { computed, watch, ref, onMounted, onBeforeUnmount } from 'vue';
 import { silhouetteUrl } from '@/components/aircraftIcon';
+import { mapProtobufCategoryToIcon, AIRCRAFT_CATEGORIES, determineAircraftCategory } from '@/utils/aircraftIcons';
 
 const props = defineProps({
   flightId: String,
@@ -51,177 +54,152 @@ const props = defineProps({
 
 const flight = ref<Flight>();
 const aircraft = ref<Aircraft>();
-const currentPosition = ref<TerrestialPosition | null>(null);
 const routeInfo = ref<string | null>(null);
-let positionUpdateInterval: number | null = null;
-// Track active position stream
+
+const apiService = getFlightApiService();
+const dataService = getDataIngestionService();
+const aircraftStore = useAircraftStore();
+const historyStore = useFlightHistoryStore();
+
+// Track active subscription
 let currentFlightId: string | null = null;
 
-const frService = inject('frService') as FlightRadarService;
+// Get current position from the aircraft store (reactive)
+const currentAircraftState = computed(() => {
+  if (!props.flightId) return null;
+  return aircraftStore.getAircraftById(props.flightId);
+});
 
-// Fetch route information using service
-const fetchRouteInfo = (callsign: string) => {
-  frService.getFlightRoute(callsign).subscribe({
-    next: (route) => {
-      routeInfo.value = route;
-    },
-    error: (error) => {
-      console.error('Error fetching route information:', error);
-      routeInfo.value = null;
-    },
-  });
+// Fetch route information
+const fetchRouteInfo = async (callsign: string) => {
+  try {
+    routeInfo.value = await apiService.getFlightRoute(callsign);
+  } catch (error) {
+    console.error('Error fetching route information:', error);
+    routeInfo.value = null;
+  }
 };
 
-// Set up position stream for updates
-const setupPositionStream = (flightId: string) => {
-  frService.registerFlightPositionsCallback(flightId, (positions: Array<TerrestialPosition>) => {
-    // Only update if this is still the selected flight
-    if (props.flightId === flightId && positions && positions.length > 0) {
-      // Always use the most recent position from the array
-      const latestPosition = positions[positions.length - 1];
-      if (latestPosition && latestPosition.alt !== undefined) {
-        currentPosition.value = latestPosition;
-      }
-    }
-  });
+// Subscribe to flight history for position updates
+const setupFlightSubscription = (flightId: string) => {
+  if (currentFlightId === flightId) return;
+
+  // Unsubscribe from previous flight
+  if (currentFlightId && dataService.isSubscribedToFlight(currentFlightId)) {
+    dataService.unsubscribeFromFlight(currentFlightId);
+  }
+
+  currentFlightId = flightId;
+
+  // Subscribe to the new flight for history updates
+  dataService.subscribeToFlight(flightId);
 };
 
-const updateCurrentPosition = () => {
-  if (!props.flightId) return;
-
-  const requestedFlightId = props.flightId;
+// Load flight and aircraft data
+const loadFlightData = async (flightId: string) => {
+  // Clear previous data
+  flight.value = undefined;
+  aircraft.value = undefined;
+  routeInfo.value = null;
 
   try {
-    // First check if we have a live position from the main position stream
-    const livePosition = frService.getCurrentPosition(requestedFlightId);
+    // Fetch flight details
+    const flightData = await apiService.getFlight(flightId);
+    if (flightData) {
+      flight.value = flightData;
 
-    // Only update if this is still the selected flight
-    if (props.flightId === requestedFlightId && livePosition && livePosition.alt !== undefined) {
-      currentPosition.value = livePosition;
-      return;
-    }
+      // Fetch route info if callsign is available
+      if (flightData.cls) {
+        fetchRouteInfo(flightData.cls);
+      }
 
-    // Fallback: try to get historical positions if live data doesn't have altitude
-    frService.getPositions(requestedFlightId).subscribe({
-      next: (positions) => {
-        // Only update if this is still the selected flight
-        if (props.flightId === requestedFlightId && positions && positions.length > 0) {
-          const latestPosition = positions[positions.length - 1];
-
-          if (latestPosition && latestPosition.alt !== undefined) {
-            currentPosition.value = latestPosition;
-          }
+      // Fetch aircraft details
+      if (flightData.icao24) {
+        const aircraftData = await apiService.getAircraft(flightData.icao24);
+        if (aircraftData) {
+          aircraft.value = aircraftData;
         }
-      },
-      error: (error) => {
-        console.error('Error fetching current position:', error);
-      },
-    });
+      }
+
+      // Subscribe to flight position updates
+      setupFlightSubscription(flightId);
+    }
   } catch (error) {
-    console.error('Error fetching current position:', error);
+    console.error('Error loading flight data:', error);
   }
 };
 
 watch(
   () => props.flightId,
   (newValue, _oldValue) => {
-    // Clear current position when changing flights
-    currentPosition.value = null;
-    routeInfo.value = null;
-
-    // Disconnect any existing position stream
-    if (currentFlightId) {
-      frService.disconnectFlightPositions(currentFlightId);
-      currentFlightId = null;
-    }
-
     if (newValue) {
-      // Reset references
+      loadFlightData(newValue);
+    } else {
+      // Clear data
       flight.value = undefined;
       aircraft.value = undefined;
+      routeInfo.value = null;
 
-      // Fetch new flight data using observables
-      frService.getFlight(newValue).subscribe({
-        next: (flightData) => {
-          flight.value = flightData;
-
-          // Fetch route information if callsign is available
-          if (flightData && flightData.cls) {
-            fetchRouteInfo(flightData.cls);
-          }
-
-          if (flightData && flightData.icao24) {
-            // Once we have the flight, get the aircraft data
-            frService.getAircraft(flightData.icao24).subscribe({
-              next: (aircraftData) => {
-                aircraft.value = aircraftData;
-
-                // Set up position stream for updates
-                currentFlightId = newValue;
-                setupPositionStream(newValue);
-
-                // Get the current position (might be available immediately)
-                updateCurrentPosition();
-              },
-              error: (err) => {
-                console.error(err);
-                aircraft.value = undefined;
-              },
-            });
-          }
-        },
-        error: (err) => {
-          console.error(err);
-          flight.value = undefined;
-        },
-      });
+      // Unsubscribe from current flight
+      if (currentFlightId && dataService.isSubscribedToFlight(currentFlightId)) {
+        dataService.unsubscribeFromFlight(currentFlightId);
+        currentFlightId = null;
+      }
     }
   },
 );
 
 onMounted(() => {
-  // Get initial position data and set up position stream if needed
   if (props.flightId) {
-    updateCurrentPosition();
-    if (!currentFlightId) {
-      currentFlightId = props.flightId;
-      setupPositionStream(props.flightId);
-    }
+    loadFlightData(props.flightId);
   }
-
-  // Maintain the interval as a fallback, but make it less frequent
-  positionUpdateInterval = window.setInterval(() => {
-    if (props.flightId && !currentPosition.value) {
-      updateCurrentPosition();
-    }
-  }, 5000); // Fallback check every 5 seconds if no position is available
 });
 
 onBeforeUnmount(() => {
-  // Clean up interval
-  if (positionUpdateInterval) {
-    window.clearInterval(positionUpdateInterval);
-    positionUpdateInterval = null;
-  }
-
-  // Disconnect position stream
-  if (currentFlightId) {
-    frService.disconnectFlightPositions(currentFlightId);
+  // Unsubscribe from flight position updates
+  if (currentFlightId && dataService.isSubscribedToFlight(currentFlightId)) {
+    dataService.unsubscribeFromFlight(currentFlightId);
     currentFlightId = null;
   }
 });
 
 const currentAltitude = computed(() => {
-  if (currentPosition?.value?.alt !== undefined && currentPosition.value.alt !== null && currentPosition.value.alt >= 0) {
-    return `${currentPosition.value?.alt.toLocaleString()} ft`;
+  // First check live data from aircraft store
+  const liveState = currentAircraftState.value;
+  if (liveState?.altitude !== undefined && liveState.altitude >= 0) {
+    return `${liveState.altitude.toLocaleString()} ft`;
+  }
+
+  // Fallback to history if available
+  if (props.flightId) {
+    const history = historyStore.getHistory(props.flightId);
+    if (history.length > 0) {
+      const latest = history[history.length - 1];
+      if (latest.altitude !== undefined && latest.altitude >= 0) {
+        return `${latest.altitude.toLocaleString()} ft`;
+      }
+    }
   }
 
   return undefined;
 });
 
 const currentGroundSpeed = computed(() => {
-  if (currentPosition?.value?.gs !== undefined && currentPosition.value.gs !== null && currentPosition.value.gs >= 0) {
-    return `${Math.round(currentPosition.value.gs)} kts`;
+  // First check live data from aircraft store
+  const liveState = currentAircraftState.value;
+  if (liveState?.groundSpeed !== undefined && liveState.groundSpeed >= 0) {
+    return `${Math.round(liveState.groundSpeed)} kts`;
+  }
+
+  // Fallback to history if available
+  if (props.flightId) {
+    const history = historyStore.getHistory(props.flightId);
+    if (history.length > 0) {
+      const latest = history[history.length - 1];
+      if (latest.groundSpeed !== undefined && latest.groundSpeed >= 0) {
+        return `${Math.round(latest.groundSpeed)} kts`;
+      }
+    }
   }
 
   return undefined;
@@ -229,6 +207,27 @@ const currentGroundSpeed = computed(() => {
 
 const typeLabel = computed(() => {
   return `Type (${aircraft.value?.icaoType ? aircraft.value.icaoType : 'Type'})`;
+});
+
+const categoryTooltip = computed(() => {
+  let category;
+
+  // First try to get category from live position data
+  const liveState = currentAircraftState.value;
+  if (liveState?.category !== undefined && liveState.category > 1) {
+    category = mapProtobufCategoryToIcon(liveState.category);
+  }
+
+  // Fall back to determining category from aircraft type
+  if ((!category || category === 'default') && (aircraft.value?.icaoType || aircraft.value?.type)) {
+    category = determineAircraftCategory(aircraft.value.icaoType, aircraft.value.type);
+  }
+
+  if (category && category !== 'default') {
+    const description = AIRCRAFT_CATEGORIES[category];
+    return `${category}: ${description}`;
+  }
+  return undefined;
 });
 
 const formattedRoute = computed(() => {

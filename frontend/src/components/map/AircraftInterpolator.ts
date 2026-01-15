@@ -67,10 +67,15 @@ export class AircraftInterpolator {
           // Calculate where we are NOW based on the previous state
           const timeSinceLastUpdate = now - this.state.startTime;
           const previousProgress = Math.min(timeSinceLastUpdate / this.UPDATE_INTERVAL_MS, 1.0);
+
+          // Preserve existing heading unless a new valid heading is provided
+          // A heading of 0 from coords is valid (north), but undefined means preserve previous
+          const newHeading = coords.heading !== undefined ? coords.heading : this.state.current.heading;
+
           startPosition = {
             lat: this.state.current.lat + (this.state.target.lat - this.state.current.lat) * previousProgress,
             lng: this.state.current.lng + (this.state.target.lng - this.state.current.lng) * previousProgress,
-            heading: coords.heading !== undefined ? coords.heading : this.state.current.heading,
+            heading: newHeading,
           };
 
           // Recalculate velocity from current interpolated position to new target

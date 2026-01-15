@@ -1,18 +1,27 @@
 import { TerrestialPosition } from '@/model/backendModel';
 import { AircraftIcon, AircraftMarker } from '@/components/map/aircraftElements';
 import { HereCoordinates } from '@/components/map/flightPath';
-import { usePositionStore } from '@/stores';
 import { differenceInSeconds } from 'date-fns';
+
+/**
+ * Interface for position store adapter.
+ * This allows MarkerManager to work with different store implementations.
+ */
+export interface PositionStoreAdapter {
+  updatePositions: (positions: Map<string, TerrestialPosition>) => void;
+  staleThreshold: number;
+  purgeStalePositions: () => void;
+}
 
 export class MarkerManager {
   private markers: Map<string, AircraftMarker> = new Map();
   private iconSvgMap: Map<string, any> = new Map();
   private aircraftIcon: AircraftIcon;
   private map: any;
-  private positionStore: ReturnType<typeof usePositionStore>;
+  private positionStore: PositionStoreAdapter;
   private onMarkerClickCallback?: (flightId: string) => void;
 
-  constructor(map: any, positionStore: ReturnType<typeof usePositionStore>) {
+  constructor(map: any, positionStore: PositionStoreAdapter) {
     this.map = map;
     this.positionStore = positionStore;
     this.aircraftIcon = new AircraftIcon(this.iconSvgMap);
@@ -83,11 +92,26 @@ export class MarkerManager {
     return heading;
   }
 
-  convertToHereCoords(flPos: TerrestialPosition, positions?: Map<string, TerrestialPosition>): HereCoordinates {
-    if (flPos.track !== undefined) {
-      return { lat: Number(flPos.lat), lng: Number(flPos.lon), heading: flPos.track } as HereCoordinates;
+  /**
+   * Convert a TerrestialPosition to HereCoordinates with heading.
+   * Returns undefined heading if no valid heading can be determined.
+   * Aircraft without valid heading should not be displayed on the map.
+   */
+  convertToHereCoords(flPos: TerrestialPosition, positions?: Map<string, TerrestialPosition>, flightId?: string): HereCoordinates {
+    // 1. Use track from position data if available (most reliable)
+    if (flPos.track !== undefined && flPos.track !== null) {
+      return { lat: Number(flPos.lat), lng: Number(flPos.lon), heading: flPos.track };
     }
 
+    // 2. Try to preserve existing heading from marker cache (prevents reset on updates without track)
+    if (flightId) {
+      const lastHeading = this.aircraftIcon.getLastRotation(flightId);
+      if (lastHeading !== undefined) {
+        return { lat: Number(flPos.lat), lng: Number(flPos.lon), heading: lastHeading };
+      }
+    }
+
+    // 3. Calculate heading from position history if available
     if (positions && flPos.icao) {
       const positionEntries = Array.from(positions.entries());
 
@@ -95,19 +119,31 @@ export class MarkerManager {
         const [_, prevPos] = positionEntries[i];
         if (prevPos.icao === flPos.icao && (prevPos.lat !== flPos.lat || prevPos.lon !== flPos.lon)) {
           const heading = this.calculateHeading(prevPos.lat, prevPos.lon, flPos.lat, flPos.lon);
-          return { lat: Number(flPos.lat), lng: Number(flPos.lon), heading } as HereCoordinates;
+          return { lat: Number(flPos.lat), lng: Number(flPos.lon), heading };
         }
       }
     }
 
-    return { lat: Number(flPos.lat), lng: Number(flPos.lon), heading: 0 } as HereCoordinates;
+    // 4. No valid heading available - return undefined heading
+    // Aircraft without heading should not be displayed on the map
+    return { lat: Number(flPos.lat), lng: Number(flPos.lon), heading: undefined };
   }
 
   updateAircraftPositions(positions: Map<string, TerrestialPosition>) {
     this.positionStore.updatePositions(positions);
 
     positions.forEach((pos: TerrestialPosition, flightId: string) => {
-      const coords = this.convertToHereCoords(pos, positions);
+      const coords = this.convertToHereCoords(pos, positions, flightId);
+
+      // Skip aircraft without valid heading - they should not be displayed on the map
+      if (coords.heading === undefined) {
+        // Remove marker if it exists (aircraft lost heading data)
+        if (this.markers.has(flightId)) {
+          this.removeMarker(flightId);
+        }
+        return;
+      }
+
       this.updateMarker(flightId, coords, pos.gs, pos.callsign, pos.cat);
     });
 
