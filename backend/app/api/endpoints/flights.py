@@ -14,7 +14,7 @@ from ..mappers import toFlightDto
 from ..models import FlightDto, to_datestring
 from ...sse.manager import sse_manager, SSEClient
 from ...sse.notifier import SSENotifier
-from ..dependencies import MetaInfoDep, get_mongodb
+from ..dependencies import MetaInfoDep, get_mongodb, MongoDBRepositoryDep
 from ...scheduling import UPDATER_JOB_NAME
 
 # Initialize logging
@@ -63,9 +63,9 @@ def ready(request: Request):
         raise HTTPException(status_code=500, detail="Service not ready")
 
 
-@router.get('/flights', response_model=List[FlightDto], 
-    summary="Get all flights",
-    description="Returns a list of currently tracked flights. icao24 is the ICAO 24-bit hex address, cls is the callsign, lstCntct is the time of last contact, firstCntct is the time of first contact",
+@router.get('/flights', response_model=List[FlightDto],
+    summary="Get past flights",
+    description="Returns a list of past flights from the database. icao24 is the ICAO 24-bit hex address, cls is the callsign, lstCntct is the time of last contact, firstCntct is the time of first contact",
     responses={
         200: {
             "description": "List of flights",
@@ -85,49 +85,27 @@ def ready(request: Request):
         }
     }
 )
-def get_flights(
-    request: Request,
-    filter: Optional[str] = Query(None, description="Filter flights (e.g. 'mil' for military only)"),
+async def get_flights(
+    repository: MongoDBRepositoryDep,
+    mil: Optional[bool] = Query(None, description="Filter by military status: true for military only, false for civilian only, omit for all"),
     limit: Optional[int] = Query(None, description="Maximum number of flights to return")
 ):
-    try:
-        # Get currently tracked flights from memory
-        cached_flights = request.app.state.updater.get_cached_flights()
-        
-        flight_manager = request.app.state.updater._flight_manager
-        modes_util = request.app.state.modes_util
-        
-        flight_dtos = []
-        
-        for flight_id, position_report in cached_flights.items():
-            if filter == 'mil' and not modes_util.is_military(position_report.icao24):
-                continue
-                
-            callsign = position_report.callsign
-            last_contact = flight_manager.flight_last_contact.get(flight_id)
-            
-            if last_contact:
-                flight_dto = FlightDto(
-                    id=flight_id,
-                    icao24=position_report.icao24,
-                    cls=callsign,
-                    lstCntct=to_datestring(last_contact),
-                    firstCntct=to_datestring(last_contact)  # For live flights, use last contact as first contact approximation
-                )
-                flight_dtos.append(flight_dto)
-        
-        flight_dtos.sort(key=lambda x: x.lstCntct, reverse=True)
-        
-        # Apply limit (default and max limit is MAX_FLIGHTS_LIMIT)
-        if limit is not None:
-            applied_limit = min(limit, MAX_FLIGHTS_LIMIT)
-        else:
-            applied_limit = MAX_FLIGHTS_LIMIT
-            
-        return flight_dtos[:applied_limit]
+    """
+    Get past flights from the database.
 
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid arguments: {str(e)}")
+    Uses the indexed is_military field for efficient filtering when mil parameter is provided.
+    """
+    # Apply limit (default and max limit is MAX_FLIGHTS_LIMIT)
+    applied_limit = min(limit, MAX_FLIGHTS_LIMIT) if limit is not None else MAX_FLIGHTS_LIMIT
+
+    # Fetch flights from database with optional military filter
+    flights = await asyncio.to_thread(
+        repository.get_recent_flights,
+        limit=applied_limit,
+        is_military=mil
+    )
+
+    return [toFlightDto(flight) for flight in flights]
 
 
 @router.get('/flights/{flight_id}', response_model=FlightDto,

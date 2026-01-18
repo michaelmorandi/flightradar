@@ -224,6 +224,34 @@ class MongoDBRepository:
             "last_contact": {"$lt": timestamp}
         }))
 
+    def get_recent_flights(
+        self,
+        limit: int = 100,
+        is_military: Optional[bool] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get recent flights sorted by last_contact descending.
+
+        Args:
+            limit: Maximum number of flights to return
+            is_military: If True, only return military flights. If False, only civilian.
+                        If None, return all flights.
+
+        Returns:
+            List of flight documents sorted by last_contact (most recent first)
+        """
+        query = {}
+
+        if is_military is not None:
+            query["is_military"] = is_military
+
+        return list(
+            self.flights_collection
+            .find(query)
+            .sort("last_contact", -1)
+            .limit(limit)
+        )
+
     def delete_flights_and_positions(self, flight_ids: List[str]):
         """Delete flights and their positions"""
         assert len(flight_ids) > 0

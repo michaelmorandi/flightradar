@@ -5,19 +5,40 @@
       {{ textTruncated }}
       <span v-if="tooltip" class="tooltip-text">{{ tooltip }}</span>
     </div>
-    <img class="valueText" :src="imageUrl" v-if="imageUrl" height="20px" />
+    <img
+      v-if="imageUrl || showGenericFallback"
+      class="valueText"
+      :src="currentImageSrc"
+      height="20px"
+      @error="onImageError"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { truncate } from '@/utils/string';
 
-const props = defineProps(['label', 'text', 'imageUrl', 'tooltip']);
+const GENERIC_SILHOUETTE = '/silhouettes/generic.png';
+
+const props = defineProps(['label', 'text', 'imageUrl', 'tooltip', 'showGenericFallback']);
+
+const imageError = ref(false);
 
 const textTruncated = computed(() => {
   return truncate(props.text, 42);
 });
+
+const currentImageSrc = computed(() => {
+  if (imageError.value || !props.imageUrl) {
+    return GENERIC_SILHOUETTE;
+  }
+  return props.imageUrl;
+});
+
+const onImageError = () => {
+  imageError.value = true;
+};
 </script>
 
 <style scoped>

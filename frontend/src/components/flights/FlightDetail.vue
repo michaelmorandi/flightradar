@@ -3,7 +3,7 @@
     <h1 class="title">{{ flight ? flight.cls : null }}</h1>
     <div class="row">
       <div class="col">
-        <DetailField label="Silhouette" :imageUrl="silhouetteUrl(aircraft && aircraft.icaoType ? aircraft.icaoType : '')" />
+        <DetailField label="Silhouette" :imageUrl="silhouetteUrl(aircraft && aircraft.icaoType ? aircraft.icaoType : '')" :showGenericFallback="true" />
       </div>
       <div class="col" v-if="routeInfo">
         <DetailField label="Route" :text="formattedRoute" />

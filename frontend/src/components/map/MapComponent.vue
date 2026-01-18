@@ -107,7 +107,13 @@ const initializeMap = () => {
 
     // Map events and behaviors
     new H.mapevents.Behavior(new H.mapevents.MapEvents(map));
-    H.ui.UI.createDefault(map, defaultLayers);
+    const ui = H.ui.UI.createDefault(map, defaultLayers);
+
+    // Remove the map settings control (layer selection)
+    const mapSettingsControl = ui.getControl('mapsettings');
+    if (mapSettingsControl) {
+      ui.removeControl('mapsettings');
+    }
 
     // Update store with initial state
     mapStore.setCenter(initialCenter);

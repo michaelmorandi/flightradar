@@ -3,6 +3,7 @@ from fastapi import Depends
 from pymongo.database import Database
 
 from ..data.repositories.aircraft_repository import AircraftRepository
+from ..data.repositories.mongodb_repository import MongoDBRepository
 from ..core.utils.modes_util import ModesUtil
 from ..config import Config, app_state
 from ..meta import MetaInformation
@@ -31,8 +32,13 @@ def get_aircraft_repository(mongodb: MongoDBDep) -> AircraftRepository:
     """Get AircraftRepository instance"""
     return AircraftRepository(mongodb)
 
+def get_mongodb_repository(mongodb: MongoDBDep) -> MongoDBRepository:
+    """Get MongoDBRepository instance"""
+    return MongoDBRepository(mongodb)
+
 ConfigDep = Annotated[Config, Depends(get_config)]
 ModesUtilDep = Annotated[ModesUtil, Depends(get_modes_util)]
 MetaInfoDep = Annotated[MetaInformation, Depends(get_meta_info)]
 AircraftRepositoryDep = Annotated[AircraftRepository, Depends(get_aircraft_repository)]
+MongoDBRepositoryDep = Annotated[MongoDBRepository, Depends(get_mongodb_repository)]
 

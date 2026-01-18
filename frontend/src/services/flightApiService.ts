@@ -44,9 +44,12 @@ export class FlightApiService {
   }
 
   /**
-   * Get list of recent flights.
+   * Get list of past flights from the database.
+   *
+   * @param limit Maximum number of flights to return
+   * @param mil Filter by military status: true for military only, false for civilian only, undefined for all
    */
-  async getFlights(limit: number = 50, filter?: string): Promise<Flight[]> {
+  async getFlights(limit: number = 50, mil?: boolean): Promise<Flight[]> {
     if (!this.apiUrl) {
       console.warn('Flight API URL not configured');
       return [];
@@ -57,8 +60,8 @@ export class FlightApiService {
     };
 
     const params = new URLSearchParams({ limit: limit.toString() });
-    if (filter) {
-      params.append('filter', filter);
+    if (mil !== undefined) {
+      params.append('mil', mil.toString());
     }
 
     try {

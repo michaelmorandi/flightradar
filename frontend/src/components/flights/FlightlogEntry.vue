@@ -1,16 +1,32 @@
 <template>
   <div class="flLogEntry">
-    <div class="silhouette" data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true" :data-bs-title="operatorTooltip">
-      <img :src="silhouetteUrl(aircraft.icaoType)" v-if="aircraft.icaoType" height="20px" />
+    <div class="entry-content" @click="toggleMap">
+      <div class="silhouette" data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true" :data-bs-title="operatorTooltip">
+        <img
+          :src="silhouetteSrc"
+          height="20px"
+          @error="onImageError"
+        />
+      </div>
+      <div class="callsign" v-if="flight.cls">
+        <span class="badge text-bg-secondary">{{ flight.cls }}</span>
+      </div>
+      <div class="aircraftType">{{ aircaftTypeTruncated }}</div>
+      <div class="operator">{{ aircaftOperatorTruncated }}</div>
+      <button
+        class="map-toggle-btn"
+        @click.stop="toggleMap"
+        :class="{ 'active': showMap, 'live': isLive }"
+        :aria-label="isLive ? 'View on live map' : 'Toggle map'"
+      >
+        <i :class="isLive ? 'bi bi-broadcast' : 'bi bi-map'"></i>
+      </button>
     </div>
-    <div class="callsign" v-if="flight.cls">
-      <span class="badge text-bg-secondary">{{ flight.cls }}</span>
-    </div>
-    <div class="aircraftType">{{ aircaftTypeTruncated }}</div>
-    <div class="operator">{{ aircaftOperatorTruncated }}</div>
-    <router-link :to="{ name: 'flightview', params: { flightId: flight.id } }">
-      <i :class="[{ 'bi-airplane': isLive, 'bi-clouds': !isLive }, 'bi', 'liveStatus']"></i>
-    </router-link>
+    <FlightLogMiniMap
+      :flight-id="flight.id"
+      :visible="showMap"
+      @close="showMap = false"
+    />
   </div>
 </template>
 
@@ -21,14 +37,34 @@ import { silhouetteUrl } from '@/components/aircraftIcon';
 import { computed, onMounted, ref, PropType } from 'vue';
 import { truncate } from '@/utils/string';
 import { differenceInMinutes, differenceInHours, startOfDay, format } from 'date-fns';
+import { useRouter } from 'vue-router';
+import { useAircraftStore } from '@/stores/aircraft';
+import FlightLogMiniMap from './FlightLogMiniMap.vue';
 
 const props = defineProps({
   flight: { type: Object as PropType<Flight>, required: true },
 });
 
 const apiService = getFlightApiService();
+const router = useRouter();
+const aircraftStore = useAircraftStore();
+
+const GENERIC_SILHOUETTE = '/silhouettes/generic.png';
 
 const aircraft = ref<Aircraft>({ icao24: '' });
+const showMap = ref(false);
+const imageError = ref(false);
+
+const silhouetteSrc = computed(() => {
+  if (imageError.value || !aircraft.value.icaoType) {
+    return GENERIC_SILHOUETTE;
+  }
+  return silhouetteUrl(aircraft.value.icaoType);
+});
+
+const onImageError = () => {
+  imageError.value = true;
+};
 
 onMounted(async () => {
   try {
@@ -44,24 +80,33 @@ onMounted(async () => {
 const operatorTooltip = computed(() => {
   let tooltipContent = `<strong>ICAO 24-bit: </strong> ${props.flight?.icao24?.toUpperCase()}<br/>`;
   if (aircraft.value.reg) tooltipContent += `<strong>Registration:</strong> ${aircraft.value.reg}<br/>`;
-  tooltipContent += `${timestampTooltip.value}`;
+  // Don't show timestamp for live/tracking aircraft
+  if (!isLive.value) {
+    tooltipContent += `${timestampTooltip.value}`;
+  }
   return tooltipContent;
 });
 
 const getTimestampString = (timestamp: Date): string => {
   const now = new Date();
-  const hoursSinceMidnight = differenceInHours(startOfDay(now), timestamp);
+  const todayMidnight = startOfDay(now);
+  const hoursSinceTodayMidnight = differenceInHours(timestamp, todayMidnight);
   let timestmpStr = '';
 
-  if (hoursSinceMidnight <= 0) {
+  if (hoursSinceTodayMidnight >= 0) {
+    // Today
     const minutes = differenceInMinutes(now, timestamp);
 
     if (isLive.value) {
-      timestmpStr = minutes == 0 ? 'tracking' : `${minutes} minutes ago`;
-    } else timestmpStr = `Today, ${format(timestamp, 'HH:mm')}`;
-  } else if (hoursSinceMidnight > 0 && hoursSinceMidnight < 24) {
+      timestmpStr = minutes <= 0 ? 'tracking' : `${minutes} minutes ago`;
+    } else {
+      timestmpStr = `Today, ${format(timestamp, 'HH:mm')}`;
+    }
+  } else if (hoursSinceTodayMidnight >= -24) {
+    // Yesterday
     timestmpStr = `Yesterday, ${format(timestamp, 'HH:mm')}`;
   } else {
+    // Older
     timestmpStr = format(timestamp, 'd.M.yyyy HH:mm');
   }
 
@@ -70,17 +115,8 @@ const getTimestampString = (timestamp: Date): string => {
 
 const timestampTooltip = computed(() => {
   const lastContact = new Date(props.flight.lstCntct);
-  const firstContact = new Date(props.flight.firstCntct);
-
   const lastContactStr: string = getTimestampString(lastContact);
-  const firstContactStr: string = getTimestampString(firstContact);
-
-  let tooltip = `<i class="bi bi-radar"></i> ${lastContactStr}`;
-
-  if (lastContactStr !== firstContactStr) {
-    tooltip += `<br><i class="bi bi-box-arrow-in-right"></i> ${firstContactStr}`;
-  }
-  return tooltip;
+  return `<i class="bi bi-radar"></i> ${lastContactStr}`;
 });
 
 const isLive = computed(() => {
@@ -95,22 +131,45 @@ const aircaftOperatorTruncated = computed(() => {
 const aircaftTypeTruncated = computed(() => {
   return truncate(aircraft.value.type, 37);
 });
+
+const toggleMap = () => {
+  if (isLive.value) {
+    // For live aircraft, navigate to main map and select the flight
+    aircraftStore.selectFlight(props.flight.id);
+    router.push('/');
+  } else {
+    // For past flights, toggle the inline mini map
+    showMap.value = !showMap.value;
+  }
+};
 </script>
 
 <style scoped>
 .flLogEntry {
-  font-size: 1.1em;
-  border-bottom: solid 1px #dadada;
+  font-size: 0.95em;
+  border-bottom: solid 1px #e0e0e0;
   max-width: 800px;
-  height: 35px;
+  transition: background-color 0.15s ease;
+}
+
+.flLogEntry:hover {
+  background-color: #f8f9fa;
+}
+
+.entry-content {
+  height: 45px;
   position: relative;
   display: flex;
   align-items: center;
+  padding: 8px 0;
+  cursor: pointer;
 }
 
 .silhouette {
   position: absolute;
-  align-self: flex-start;
+  left: 8px;
+  display: flex;
+  align-items: center;
 }
 
 .callsign {
@@ -121,16 +180,54 @@ const aircaftTypeTruncated = computed(() => {
 .aircraftType {
   position: absolute;
   left: 200px;
+  color: #212529;
+  font-weight: 500;
 }
 
 .operator {
   position: absolute;
   left: 540px;
+  color: #6c757d;
 }
 
-.liveStatus {
+.map-toggle-btn {
   position: absolute;
-  top: 5px;
-  right: 5px;
+  right: 8px;
+  background: none;
+  border: 1px solid #dee2e6;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #495057;
+  transition: all 0.15s ease;
+  font-size: 0.9rem;
+}
+
+.map-toggle-btn:hover {
+  background: #e9ecef;
+  border-color: #adb5bd;
+  color: #212529;
+}
+
+.map-toggle-btn.active {
+  background: #0d6efd;
+  border-color: #0d6efd;
+  color: #fff;
+}
+
+.map-toggle-btn.active:hover {
+  background: #0b5ed7;
+  border-color: #0b5ed7;
+}
+
+.map-toggle-btn.live {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #16a34a;
+}
+
+.map-toggle-btn.live:hover {
+  background: #dcfce7;
+  border-color: #4ade80;
 }
 </style>

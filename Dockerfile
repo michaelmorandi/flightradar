@@ -45,7 +45,7 @@ RUN uv sync --frozen
 # Install backend application
 COPY --chown=radar backend/app app
 RUN mkdir -p resources
-COPY --chown=radar backend/resources/mil_ranges.csv backend/resources/meta.json resources/
+COPY --chown=radar backend/resources/mil_ranges.json backend/resources/meta.json resources/
 COPY --chown=radar backend/flightradar.py ./
 
 # Copy frontend build from previous stage
