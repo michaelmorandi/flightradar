@@ -14,3 +14,7 @@ export type {
 // Map store (retained - manages map UI state)
 export { useMapStore } from './map';
 export type { MapCenter, MapViewport, MapConfiguration } from './map';
+
+// View store (manages navigation between Live and Log views)
+export { useViewStore } from './viewStore';
+export type { ViewType } from './viewStore';

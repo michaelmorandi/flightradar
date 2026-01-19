@@ -1,25 +1,53 @@
 <template>
   <nav class="app-nav">
     <div class="nav-tabs">
-      <router-link to="/" class="nav-tab">
+      <a
+        href="#"
+        class="nav-tab"
+        :class="{ active: viewStore.currentView === 'live' }"
+        @click.prevent="viewStore.showLive()"
+      >
         <i class="bi bi-radar"></i>
         <span>Live</span>
-      </router-link>
-      <router-link to="/flightlog" class="nav-tab">
+      </a>
+      <a
+        href="#"
+        class="nav-tab"
+        :class="{ active: viewStore.currentView === 'log' }"
+        @click.prevent="viewStore.showLog()"
+      >
         <i class="bi bi-card-list"></i>
         <span>Log</span>
-      </router-link>
+      </a>
     </div>
   </nav>
-  <router-view />
+  <div v-show="viewStore.currentView === 'live'">
+    <LiveRadar />
+  </div>
+  <div v-show="viewStore.currentView === 'log'">
+    <FlightLog />
+  </div>
 </template>
 
 <script>
 import { defineComponent } from 'vue';
 import { Tooltip } from 'bootstrap';
+import { useViewStore } from './stores/viewStore';
+import LiveRadar from './views/LiveRadar.vue';
+import FlightLog from './views/FlightLog.vue';
 
 export default defineComponent({
   name: 'App',
+
+  components: {
+    LiveRadar,
+    FlightLog,
+  },
+
+  setup() {
+    const viewStore = useViewStore();
+    return { viewStore };
+  },
 
   mounted() {
     // Initialize Bootstrap tooltips
@@ -72,7 +100,7 @@ export default defineComponent({
   background: #f5f5f5;
 }
 
-.nav-tab.router-link-exact-active {
+.nav-tab.active {
   color: #111;
   background: #f0f0f0;
 }

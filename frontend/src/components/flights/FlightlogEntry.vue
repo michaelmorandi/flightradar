@@ -37,8 +37,8 @@ import { silhouetteUrl } from '@/components/aircraftIcon';
 import { computed, onMounted, ref, PropType } from 'vue';
 import { truncate } from '@/utils/string';
 import { differenceInMinutes, differenceInHours, startOfDay, format } from 'date-fns';
-import { useRouter } from 'vue-router';
 import { useAircraftStore } from '@/stores/aircraft';
+import { useViewStore } from '@/stores/viewStore';
 import FlightLogMiniMap from './FlightLogMiniMap.vue';
 
 const props = defineProps({
@@ -46,8 +46,8 @@ const props = defineProps({
 });
 
 const apiService = getFlightApiService();
-const router = useRouter();
 const aircraftStore = useAircraftStore();
+const viewStore = useViewStore();
 
 const GENERIC_SILHOUETTE = '/silhouettes/generic.png';
 
@@ -134,9 +134,9 @@ const aircaftTypeTruncated = computed(() => {
 
 const toggleMap = () => {
   if (isLive.value) {
-    // For live aircraft, navigate to main map and select the flight
+    // For live aircraft, switch to live view and select the flight
     aircraftStore.selectFlight(props.flight.id);
-    router.push('/');
+    viewStore.showLive();
   } else {
     // For past flights, toggle the inline mini map
     showMap.value = !showMap.value;
