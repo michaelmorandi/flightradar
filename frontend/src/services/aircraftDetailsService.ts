@@ -18,13 +18,14 @@ export class AircraftDetailsService {
   private axios: AxiosCacheInstance;
   private apiUrl: string;
   private cacheConfig: CacheRequestConfig;
-  private authConfig: { auth?: { username: string; password: string } };
 
   // Track in-flight requests to prevent duplicates
   private pendingRequests: Map<string, Promise<AircraftDetails | null>> = new Map();
 
   constructor() {
-    const instance = Axios.create();
+    const instance = Axios.create({
+      withCredentials: true, // Send cookies for JWT authentication
+    });
     this.axios = setupCache(instance);
 
     this.apiUrl = config.flightApiUrl || '';
@@ -34,15 +35,6 @@ export class AircraftDetailsService {
         ttl: CACHE_TTL_MS,
       },
     };
-
-    this.authConfig = config.flightApiUser
-      ? {
-          auth: {
-            username: config.flightApiUser,
-            password: config.flightApiPassword || '',
-          },
-        }
-      : {};
   }
 
   /**
@@ -143,7 +135,7 @@ export class AircraftDetailsService {
     try {
       const response = await this.axios.get(
         `${this.apiUrl}/aircraft/${icao24}`,
-        { ...this.cacheConfig, ...this.authConfig }
+        this.cacheConfig
       );
 
       if (response.status >= 200 && response.status < 300 && response.data) {

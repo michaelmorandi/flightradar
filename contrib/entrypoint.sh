@@ -8,8 +8,7 @@ echo "Replacing env vars in JS files..."
 # Set defaults if not provided
 export VITE_FLIGHT_API_URL=${VITE_FLIGHT_API_URL:-http://localhost:8083/api/v1}
 export VITE_HERE_API_KEY=${VITE_HERE_API_KEY:-}
-export VITE_FLIGHT_API_USER=${VITE_FLIGHT_API_USER:-}
-export VITE_FLIGHT_API_PASSWORD=${VITE_FLIGHT_API_PASSWORD:-}
+export VITE_CLIENT_SECRET=${VITE_CLIENT_SECRET:-}
 export VITE_MOCK_DATA=${VITE_MOCK_DATA:-false}
 export VITE_ENABLE_INTERPOLATION=${VITE_ENABLE_INTERPOLATION:-true}
 
@@ -26,7 +25,7 @@ do
     fi
 
     # Replace placeholders with actual environment variables
-    envsubst '${VITE_FLIGHT_API_URL} ${VITE_HERE_API_KEY} ${VITE_FLIGHT_API_USER} ${VITE_FLIGHT_API_PASSWORD} ${VITE_MOCK_DATA} ${VITE_ENABLE_INTERPOLATION}' < "$file.tmpl" > "$file"
+    envsubst '${VITE_FLIGHT_API_URL} ${VITE_HERE_API_KEY} ${VITE_CLIENT_SECRET} ${VITE_MOCK_DATA} ${VITE_ENABLE_INTERPOLATION}' < "$file.tmpl" > "$file"
   fi
 done
 

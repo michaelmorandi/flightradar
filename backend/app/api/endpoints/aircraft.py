@@ -3,7 +3,7 @@ from typing import List
 from pydantic import BaseModel, Field
 
 from .. import router
-from ..dependencies import AircraftRepositoryDep
+from ..dependencies import AircraftRepositoryDep, CurrentUserDep
 from ..mappers import toAircraftDto
 from ..models import AircraftDto
 
@@ -41,6 +41,7 @@ class BulkAircraftResponse(BaseModel):
 )
 def get_aircraft(
     icao24addr: str,
+    current_user: CurrentUserDep,
     aircraft_repo: AircraftRepositoryDep
 ):
     aircraft = aircraft_repo.query_aircraft(icao24addr)
@@ -81,6 +82,7 @@ def get_aircraft(
 )
 def get_aircraft_collection(
     request: BulkAircraftRequest,
+    current_user: CurrentUserDep,
     aircraft_repo: AircraftRepositoryDep
 ):
     

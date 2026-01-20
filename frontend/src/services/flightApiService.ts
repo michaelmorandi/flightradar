@@ -25,22 +25,14 @@ const HEXDB_API_BASEPATH = 'https://hexdb.io/api/v1/';
 export class FlightApiService {
   private axios: AxiosCacheInstance;
   private apiUrl: string;
-  private authConfig: { auth?: { username: string; password: string } };
 
   constructor() {
-    const instance = Axios.create();
+    const instance = Axios.create({
+      withCredentials: true, // Send cookies for JWT authentication
+    });
     this.axios = setupCache(instance);
 
     this.apiUrl = config.flightApiUrl || '';
-
-    this.authConfig = config.flightApiUser
-      ? {
-          auth: {
-            username: config.flightApiUser,
-            password: config.flightApiPassword || '',
-          },
-        }
-      : {};
   }
 
   /**
@@ -81,7 +73,7 @@ export class FlightApiService {
     try {
       const response = await this.axios.get(
         `${this.apiUrl}/flights?${params}`,
-        { ...cacheConfig, ...this.authConfig }
+        cacheConfig
       );
 
       if (response.status >= 200 && response.status < 300) {
@@ -118,7 +110,7 @@ export class FlightApiService {
     try {
       const response = await this.axios.get(
         `${this.apiUrl}/flights/${flightId}`,
-        { ...cacheConfig, ...this.authConfig }
+        cacheConfig
       );
 
       if (response.status >= 200 && response.status < 300) {
@@ -148,7 +140,7 @@ export class FlightApiService {
     try {
       const response = await this.axios.get(
         `${this.apiUrl}/aircraft/${icao24}`,
-        { ...cacheConfig, ...this.authConfig }
+        cacheConfig
       );
 
       if (response.status >= 200 && response.status < 300) {
@@ -184,7 +176,7 @@ export class FlightApiService {
     try {
       const response = await this.axios.get(
         `${this.apiUrl}/flights/${flightId}/positions`,
-        { ...cacheConfig, ...this.authConfig }
+        cacheConfig
       );
 
       if (response.status >= 200 && response.status < 300) {

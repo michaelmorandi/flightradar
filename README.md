@@ -53,15 +53,20 @@ docker run -p 80:80 \
 Configure the application using environment variables:
 
 **Frontend:**
-- `VITE_FLIGHT_API_URL` - Full API URL with protocol, host, and path (e.g., `http://localhost:8083/api/v1` for local Docker, or `https://your-domain.com/api/v1` for production)
+- `VITE_FLIGHT_API_URL` - Full API URL with protocol, host, and path (e.g., `http://localhost:8000/api/v1` for local, or `https://your-domain.com/api/v1` for production)
 - `VITE_HERE_API_KEY` - HERE Maps API key
-- `VITE_FLIGHT_API_USER` - API authentication user
-- `VITE_FLIGHT_API_PASSWORD` - API authentication password
+- `VITE_CLIENT_SECRET` - Shared secret for authentication (must match backend `CLIENT_SECRET`)
 - `VITE_MOCK_DATA` - Use mock data (default: `false`)
 - `VITE_ENABLE_INTERPOLATION` - Enable aircraft position interpolation (default: `true`)
 
 **Backend:**
-Add your backend environment variables as needed (MongoDB URI, etc.)
+- `MONGODB_URI` - MongoDB connection string
+- `MONGODB_DB_NAME` - Database name
+- `JWT_SECRET` - Secret for signing JWT tokens (generate with `openssl rand -hex 32`)
+- `CLIENT_SECRET` or `VITE_CLIENT_SECRET` - Shared secret for anonymous auth. Backend accepts either, so you can set just `VITE_CLIENT_SECRET` for both.
+- `ALLOWED_ORIGINS` - Comma-separated frontend origins (e.g., `https://flightradar.example.com`). Required for cross-origin requests with cookies. Defaults to localhost for development.
+
+> **Note on ALLOWED_ORIGINS:** When the frontend and backend are on different domains (or ports), browsers enforce Cross-Origin Resource Sharing (CORS) restrictions. Since authentication uses HTTP-only cookies, the backend must explicitly allow the frontend's origin. Wildcards (`*`) cannot be used with cookie-based auth.
 
 ## Development
 

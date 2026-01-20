@@ -14,7 +14,7 @@ from ..mappers import toFlightDto
 from ..models import FlightDto, PaginatedFlightsResponse, to_datestring
 from ...sse.manager import sse_manager, SSEClient
 from ...sse.notifier import SSENotifier
-from ..dependencies import MetaInfoDep, get_mongodb, MongoDBRepositoryDep
+from ..dependencies import MetaInfoDep, get_mongodb, MongoDBRepositoryDep, CurrentUserDep
 from ...scheduling import UPDATER_JOB_NAME
 
 # Initialize logging
@@ -94,6 +94,7 @@ def ready(request: Request):
 )
 async def get_flights(
     repository: MongoDBRepositoryDep,
+    current_user: CurrentUserDep,
     mil: Optional[bool] = Query(None, description="Filter by military status: true for military only, false for civilian only, omit for all"),
     limit: Optional[int] = Query(None, description="Maximum number of flights to return per page"),
     page: Optional[int] = Query(1, description="Page number (1-indexed)", ge=1),
@@ -148,7 +149,11 @@ async def get_flights(
         404: {"description": "Flight not found"}
     }
 )
-async def get_flight(flight_id: str, mongodb: Database = Depends(get_mongodb)):
+async def get_flight(
+    flight_id: str,
+    current_user: CurrentUserDep,
+    mongodb: Database = Depends(get_mongodb)
+):
     try:
         flight = await asyncio.to_thread(
             lambda: mongodb.flights.find_one({"_id": ObjectId(flight_id)})
@@ -164,7 +169,7 @@ async def get_flight(flight_id: str, mongodb: Database = Depends(get_mongodb)):
 
 
 @router.get('/live/stream')
-async def sse_all_positions(request: Request):
+async def sse_all_positions(request: Request, current_user: CurrentUserDep):
     """SSE endpoint for real-time flight data (positions, categories, callsigns)"""
     client_id = str(uuid.uuid4())
     app = request.app
@@ -325,7 +330,7 @@ async def _fetch_flight_positions(mongodb, flight_id: str) -> list:
 
 
 @router.get('/flights/{flight_id}/positions/stream')
-async def sse_flight_positions(request: Request, flight_id: str):
+async def sse_flight_positions(request: Request, flight_id: str, current_user: CurrentUserDep):
     """SSE endpoint for real-time position updates for a specific flight"""
     app = request.app
     mongodb = app.state.mongodb
@@ -467,7 +472,11 @@ async def sse_flight_positions(request: Request, flight_id: str):
         404: {"description": "Flight not found"}
     }
 )
-async def get_positions(flight_id: str, mongodb: Database = Depends(get_mongodb)):
+async def get_positions(
+    flight_id: str,
+    current_user: CurrentUserDep,
+    mongodb: Database = Depends(get_mongodb)
+):
     try:
         flight = await asyncio.to_thread(
             lambda: mongodb.flights.find_one({"_id": ObjectId(flight_id)})
@@ -506,6 +515,7 @@ async def get_positions(flight_id: str, mongodb: Database = Depends(get_mongodb)
 )
 def get_all_positions(
     request: Request,
+    current_user: CurrentUserDep,
     filter: Optional[str] = Query(None, description="Filter positions (e.g. 'mil' for military only)")
 ):
     cached_flights = request.app.state.updater.get_cached_flights()

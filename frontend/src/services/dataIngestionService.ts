@@ -57,7 +57,7 @@ export class DataIngestionService {
     aircraftStore.setConnectionStatus('connecting');
 
     try {
-      this.positionsEventSource = new EventSource(url);
+      this.positionsEventSource = new EventSource(url, { withCredentials: true });
 
       this.positionsEventSource.onopen = () => {
         console.debug('Position stream connection established');
@@ -145,7 +145,7 @@ export class DataIngestionService {
     historyStore.setLoading(flightId, true);
 
     try {
-      const eventSource = new EventSource(url);
+      const eventSource = new EventSource(url, { withCredentials: true });
       this.flightEventSources.set(flightId, eventSource);
 
       eventSource.onopen = () => {

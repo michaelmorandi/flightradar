@@ -1,4 +1,8 @@
 # Multi-stage build for production deployment
+# Build metadata passed as arguments (generate with: git describe --tags --always)
+ARG BUILD_COMMIT=unknown
+ARG BUILD_TIMESTAMP=unknown
+
 # Stage 1: Build frontend
 FROM node:lts-alpine AS frontend-build
 WORKDIR /app/frontend
@@ -9,8 +13,7 @@ COPY frontend/ ./
 # These will be replaced by envsubst at container startup
 ENV VITE_FLIGHT_API_URL='${VITE_FLIGHT_API_URL}'
 ENV VITE_HERE_API_KEY='${VITE_HERE_API_KEY}'
-ENV VITE_FLIGHT_API_USER='${VITE_FLIGHT_API_USER}'
-ENV VITE_FLIGHT_API_PASSWORD='${VITE_FLIGHT_API_PASSWORD}'
+ENV VITE_CLIENT_SECRET='${VITE_CLIENT_SECRET}'
 ENV VITE_MOCK_DATA='${VITE_MOCK_DATA}'
 ENV VITE_ENABLE_INTERPOLATION='${VITE_ENABLE_INTERPOLATION}'
 RUN npm run build
@@ -44,8 +47,12 @@ RUN uv sync --frozen
 
 # Install backend application
 COPY --chown=radar backend/app app
-RUN mkdir -p resources
-COPY --chown=radar backend/resources/mil_ranges.json backend/resources/meta.json resources/
+# Generate build metadata from args
+ARG BUILD_COMMIT
+ARG BUILD_TIMESTAMP
+RUN mkdir -p resources && \
+    echo "{\"commit_id\": \"${BUILD_COMMIT}\", \"build_timestamp\": \"${BUILD_TIMESTAMP}\"}" > resources/meta.json
+COPY --chown=radar backend/resources/mil_ranges.json resources/
 COPY --chown=radar backend/flightradar.py ./
 
 # Copy frontend build from previous stage

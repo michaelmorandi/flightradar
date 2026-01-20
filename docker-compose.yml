@@ -13,6 +13,7 @@ services:
       # Frontend environment variables (can override .env file values)
       - VITE_FLIGHT_API_URL=${VITE_FLIGHT_API_URL}
       - VITE_HERE_API_KEY=${VITE_HERE_API_KEY}
+      - VITE_CLIENT_SECRET=${VITE_CLIENT_SECRET}
       - VITE_FLIGHT_API_USER=${VITE_FLIGHT_API_USER}
       - VITE_FLIGHT_API_PASSWORD=${VITE_FLIGHT_API_PASSWORD}
       - VITE_MOCK_DATA=${VITE_MOCK_DATA}
@@ -27,6 +28,12 @@ services:
       - MIL_ONLY=${MIL_ONLY}
       - DB_RETENTION_MIN=${DB_RETENTION_MIN}
       - UNKNOWN_AIRCRAFT_CRAWLING=${UNKNOWN_AIRCRAFT_CRAWLING}
+
+      # Authentication environment variables
+      - JWT_SECRET=${JWT_SECRET}
+      - CLIENT_SECRET=${CLIENT_SECRET}
+      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      - CHALLENGE_EXPIRE_SECONDS=${CHALLENGE_EXPIRE_SECONDS:-60}
     restart: unless-stopped
 
   # Uncomment if you need MongoDB

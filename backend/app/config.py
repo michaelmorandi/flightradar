@@ -67,6 +67,18 @@ class Config:
     # gRPC configuration (used when RADAR_SERVICE_TYPE = 'grpc')
     GRPC_SERVER_ADDRESS = 'localhost:50051'
 
+    # JWT Authentication configuration
+    JWT_SECRET = None  # Required - must be set via environment variable
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 15  # Token lifetime in minutes
+    JWT_ALGORITHM = 'HS256'
+
+    # Client secret for anonymous user authentication
+    CLIENT_SECRET = None  # Required - must match frontend VITE_CLIENT_SECRET
+
+    # Allowed frontend origins (comma-separated)
+    # Used for CORS and cookie security
+    ALLOWED_ORIGINS = None
+
     def __init__(self):
 
         self.config_src = ConfigSource.NONE
@@ -96,6 +108,10 @@ class Config:
         ENV_MONGODB_URI = 'MONGODB_URI'
         ENV_MONGODB_DB_NAME = 'MONGODB_DB_NAME'
         ENV_GRPC_SERVER_ADDRESS = 'GRPC_SERVER_ADDRESS'
+        ENV_JWT_SECRET = 'JWT_SECRET'
+        ENV_JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 'JWT_ACCESS_TOKEN_EXPIRE_MINUTES'
+        ENV_CLIENT_SECRET = 'CLIENT_SECRET'
+        ENV_ALLOWED_ORIGINS = 'ALLOWED_ORIGINS'
 
         if os.environ.get(ENV_DATA_FOLDER):
             self.DATA_FOLDER = os.environ.get(ENV_DATA_FOLDER)
@@ -124,6 +140,20 @@ class Config:
             self.MONGODB_DB_NAME = os.environ.get(ENV_MONGODB_DB_NAME)
         if os.environ.get(ENV_GRPC_SERVER_ADDRESS):
             self.GRPC_SERVER_ADDRESS = os.environ.get(ENV_GRPC_SERVER_ADDRESS)
+        if os.environ.get(ENV_JWT_SECRET):
+            self.JWT_SECRET = os.environ.get(ENV_JWT_SECRET)
+        if os.environ.get(ENV_JWT_ACCESS_TOKEN_EXPIRE_MINUTES):
+            try:
+                self.JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get(ENV_JWT_ACCESS_TOKEN_EXPIRE_MINUTES))
+            except ValueError:
+                pass
+        # Accept either CLIENT_SECRET or VITE_CLIENT_SECRET (for single-variable Docker setup)
+        if os.environ.get(ENV_CLIENT_SECRET):
+            self.CLIENT_SECRET = os.environ.get(ENV_CLIENT_SECRET)
+        elif os.environ.get('VITE_CLIENT_SECRET'):
+            self.CLIENT_SECRET = os.environ.get('VITE_CLIENT_SECRET')
+        if os.environ.get(ENV_ALLOWED_ORIGINS):
+            self.ALLOWED_ORIGINS = os.environ.get(ENV_ALLOWED_ORIGINS)
         self.config_src = ConfigSource.ENV
 
     def __str__(self):

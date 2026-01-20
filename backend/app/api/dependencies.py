@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Optional
 from fastapi import Depends
 from pymongo.database import Database
 
@@ -7,6 +7,8 @@ from ..data.repositories.mongodb_repository import MongoDBRepository
 from ..core.utils.modes_util import ModesUtil
 from ..config import Config, app_state
 from ..meta import MetaInformation
+from ..auth.models import User
+from ..auth.config import create_fastapi_users
 
 def get_mongodb() -> Database:
     """Get MongoDB database connection"""
@@ -41,4 +43,21 @@ ModesUtilDep = Annotated[ModesUtil, Depends(get_modes_util)]
 MetaInfoDep = Annotated[MetaInformation, Depends(get_meta_info)]
 AircraftRepositoryDep = Annotated[AircraftRepository, Depends(get_aircraft_repository)]
 MongoDBRepositoryDep = Annotated[MongoDBRepository, Depends(get_mongodb_repository)]
+
+
+# Create fastapi-users instance for dependency injection
+_config = Config()
+_fastapi_users = create_fastapi_users(_config.JWT_SECRET)
+
+# Use fastapi-users' built-in dependencies
+_current_active_user = _fastapi_users.current_user(active=True)
+_current_optional_user = _fastapi_users.current_user(active=True, optional=True)
+
+
+# Type annotation for authenticated user dependency
+CurrentUserDep = Annotated[User, Depends(_current_active_user)]
+
+
+# Type annotation for optional user dependency
+OptionalUserDep = Annotated[Optional[User], Depends(_current_optional_user)]
 
