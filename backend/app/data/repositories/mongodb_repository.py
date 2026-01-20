@@ -227,30 +227,74 @@ class MongoDBRepository:
     def get_recent_flights(
         self,
         limit: int = 100,
-        is_military: Optional[bool] = None
-    ) -> List[Dict[str, Any]]:
+        is_military: Optional[bool] = None,
+        page: int = 1,
+        include_position_count: bool = False
+    ) -> Dict[str, Any]:
         """
-        Get recent flights sorted by last_contact descending.
+        Get recent flights sorted by last_contact descending with pagination.
 
         Args:
-            limit: Maximum number of flights to return
+            limit: Maximum number of flights to return per page
             is_military: If True, only return military flights. If False, only civilian.
                         If None, return all flights.
+            page: Page number (1-indexed)
+            include_position_count: If True, include position count for each flight
 
         Returns:
-            List of flight documents sorted by last_contact (most recent first)
+            Dictionary with 'flights' list, 'total' count, 'page', 'page_size', and 'total_pages'
         """
         query = {}
 
         if is_military is not None:
             query["is_military"] = is_military
 
-        return list(
+        # Get total count for pagination metadata
+        total = self.flights_collection.count_documents(query)
+
+        # Calculate skip value for pagination
+        skip = (page - 1) * limit
+
+        # Get flights
+        flights = list(
             self.flights_collection
             .find(query)
             .sort("last_contact", -1)
+            .skip(skip)
             .limit(limit)
         )
+
+        # Optionally add position counts
+        if include_position_count and flights:
+            flight_ids = [flight["_id"] for flight in flights]
+
+            # Get position counts in a single aggregation query
+            position_counts = {}
+            pipeline = [
+                {"$match": {"flight_id": {"$in": flight_ids}}},
+                {"$group": {
+                    "_id": "$flight_id",
+                    "count": {"$sum": 1}
+                }}
+            ]
+
+            for result in self.positions_collection.aggregate(pipeline):
+                position_counts[result["_id"]] = result["count"]
+
+            # Add position counts to flight documents
+            for flight in flights:
+                flight["position_count"] = position_counts.get(flight["_id"], 0)
+
+        # Calculate total pages
+        total_pages = (total + limit - 1) // limit if limit > 0 else 0
+
+        return {
+            "flights": flights,
+            "total": total,
+            "page": page,
+            "page_size": limit,
+            "total_pages": total_pages
+        }
 
     def delete_flights_and_positions(self, flight_ids: List[str]):
         """Delete flights and their positions"""

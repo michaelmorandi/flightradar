@@ -1,6 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 
 def to_datestring(obj: datetime) -> str:
     if obj.tzinfo:
@@ -17,9 +17,22 @@ class FlightDto(BaseModel):
     cls: Optional[str] = None
     lstCntct: str
     firstCntct: str
-    
+    positionCount: Optional[int] = Field(None, alias="position_count")
+
     class Config:
         arbitrary_types_allowed = True
+        populate_by_name = True
+
+class PaginatedFlightsResponse(BaseModel):
+    flights: List[FlightDto]
+    total: int
+    page: int
+    page_size: int = Field(alias="pageSize")
+    total_pages: int = Field(alias="totalPages")
+
+    class Config:
+        arbitrary_types_allowed = True
+        populate_by_name = True
 
 class AircraftDto(BaseModel):
     icao24: str

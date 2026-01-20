@@ -14,6 +14,7 @@
       <div class="aircraftType">{{ aircaftTypeTruncated }}</div>
       <div class="operator">{{ aircaftOperatorTruncated }}</div>
       <button
+        v-if="hasPositions"
         class="map-toggle-btn"
         @click.stop="toggleMap"
         :class="{ 'active': showMap, 'live': isLive }"
@@ -122,6 +123,10 @@ const timestampTooltip = computed(() => {
 const isLive = computed(() => {
   const lastContact = new Date(props.flight.lstCntct);
   return differenceInMinutes(new Date(), lastContact) < 5;
+});
+
+const hasPositions = computed(() => {
+  return props.flight.positionCount !== undefined && props.flight.positionCount > 0;
 });
 
 const aircaftOperatorTruncated = computed(() => {

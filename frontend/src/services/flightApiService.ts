@@ -11,7 +11,7 @@
 import Axios from 'axios';
 import { setupCache, type AxiosCacheInstance, type CacheRequestConfig } from 'axios-cache-interceptor';
 import { config } from '@/config';
-import type { Flight, Aircraft, TerrestialPosition } from '@/model/backendModel';
+import type { Flight, Aircraft, TerrestialPosition, PaginatedFlightsResponse } from '@/model/backendModel';
 
 /** Cache TTL for flight list (1 second) */
 const FLIGHTS_CACHE_TTL = 1000;
@@ -44,22 +44,32 @@ export class FlightApiService {
   }
 
   /**
-   * Get list of past flights from the database.
+   * Get list of past flights from the database with pagination.
    *
-   * @param limit Maximum number of flights to return
+   * @param limit Maximum number of flights to return per page
    * @param mil Filter by military status: true for military only, false for civilian only, undefined for all
+   * @param page Page number (1-indexed)
    */
-  async getFlights(limit: number = 50, mil?: boolean): Promise<Flight[]> {
+  async getFlights(limit: number = 50, mil?: boolean, page: number = 1): Promise<PaginatedFlightsResponse> {
     if (!this.apiUrl) {
       console.warn('Flight API URL not configured');
-      return [];
+      return {
+        flights: [],
+        total: 0,
+        page: 1,
+        pageSize: limit,
+        totalPages: 0
+      };
     }
 
     const cacheConfig: CacheRequestConfig = {
       cache: { ttl: FLIGHTS_CACHE_TTL },
     };
 
-    const params = new URLSearchParams({ limit: limit.toString() });
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      page: page.toString()
+    });
     if (mil !== undefined) {
       params.append('mil', mil.toString());
     }
@@ -71,7 +81,14 @@ export class FlightApiService {
       );
 
       if (response.status >= 200 && response.status < 300) {
-        return response.data;
+        const data = response.data;
+        // Convert date strings to Date objects
+        data.flights = data.flights.map((flight: any) => ({
+          ...flight,
+          firstCntct: new Date(flight.firstCntct),
+          lstCntct: new Date(flight.lstCntct)
+        }));
+        return data;
       }
 
       throw new Error(response.statusText || 'Error retrieving flights');

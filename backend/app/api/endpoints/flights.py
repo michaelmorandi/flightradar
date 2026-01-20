@@ -11,7 +11,7 @@ import uuid
 
 from .. import router
 from ..mappers import toFlightDto
-from ..models import FlightDto, to_datestring
+from ..models import FlightDto, PaginatedFlightsResponse, to_datestring
 from ...sse.manager import sse_manager, SSEClient
 from ...sse.notifier import SSENotifier
 from ..dependencies import MetaInfoDep, get_mongodb, MongoDBRepositoryDep
@@ -63,23 +63,30 @@ def ready(request: Request):
         raise HTTPException(status_code=500, detail="Service not ready")
 
 
-@router.get('/flights', response_model=List[FlightDto],
+@router.get('/flights', response_model=PaginatedFlightsResponse,
     summary="Get past flights",
-    description="Returns a list of past flights from the database. icao24 is the ICAO 24-bit hex address, cls is the callsign, lstCntct is the time of last contact, firstCntct is the time of first contact",
+    description="Returns a paginated list of past flights from the database. icao24 is the ICAO 24-bit hex address, cls is the callsign, lstCntct is the time of last contact, firstCntct is the time of first contact, positionCount is the number of positions recorded for the flight",
     responses={
         200: {
-            "description": "List of flights",
+            "description": "Paginated list of flights",
             "content": {
                 "application/json": {
-                    "example": [
-                        {
-                            "id": "683f570bd570101935e7ff63",
-                            "icao24": "394a03",
-                            "cls": "AFR990",
-                            "lstCntct": "2025-06-03T20:12:03.615000Z",
-                            "firstCntct": "2025-06-03T20:11:55.542000Z"
-                        }
-                    ]
+                    "example": {
+                        "flights": [
+                            {
+                                "id": "683f570bd570101935e7ff63",
+                                "icao24": "394a03",
+                                "cls": "AFR990",
+                                "lstCntct": "2025-06-03T20:12:03.615000Z",
+                                "firstCntct": "2025-06-03T20:11:55.542000Z",
+                                "positionCount": 42
+                            }
+                        ],
+                        "total": 150,
+                        "page": 1,
+                        "pageSize": 50,
+                        "totalPages": 3
+                    }
                 }
             }
         }
@@ -88,24 +95,34 @@ def ready(request: Request):
 async def get_flights(
     repository: MongoDBRepositoryDep,
     mil: Optional[bool] = Query(None, description="Filter by military status: true for military only, false for civilian only, omit for all"),
-    limit: Optional[int] = Query(None, description="Maximum number of flights to return")
+    limit: Optional[int] = Query(None, description="Maximum number of flights to return per page"),
+    page: Optional[int] = Query(1, description="Page number (1-indexed)", ge=1)
 ):
     """
-    Get past flights from the database.
+    Get past flights from the database with pagination.
 
     Uses the indexed is_military field for efficient filtering when mil parameter is provided.
+    Includes position count for each flight to determine if map button should be shown.
     """
     # Apply limit (default and max limit is MAX_FLIGHTS_LIMIT)
     applied_limit = min(limit, MAX_FLIGHTS_LIMIT) if limit is not None else MAX_FLIGHTS_LIMIT
 
-    # Fetch flights from database with optional military filter
-    flights = await asyncio.to_thread(
+    # Fetch flights from database with optional military filter and pagination
+    result = await asyncio.to_thread(
         repository.get_recent_flights,
         limit=applied_limit,
-        is_military=mil
+        is_military=mil,
+        page=page,
+        include_position_count=True
     )
 
-    return [toFlightDto(flight) for flight in flights]
+    return PaginatedFlightsResponse(
+        flights=[toFlightDto(flight) for flight in result["flights"]],
+        total=result["total"],
+        page=result["page"],
+        page_size=result["page_size"],
+        total_pages=result["total_pages"]
+    )
 
 
 @router.get('/flights/{flight_id}', response_model=FlightDto,

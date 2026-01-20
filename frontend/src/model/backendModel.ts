@@ -4,6 +4,15 @@ export interface Flight {
   cls: string;
   firstCntct: Date;
   lstCntct: Date;
+  positionCount?: number;
+}
+
+export interface PaginatedFlightsResponse {
+  flights: Flight[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 export interface TerrestialPosition {

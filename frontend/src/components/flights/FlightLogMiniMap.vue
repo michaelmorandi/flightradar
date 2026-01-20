@@ -21,6 +21,7 @@ import { config } from '@/config';
 import { getFlightApiService } from '@/services/flightApiService';
 import { FlightPath } from '@/components/map/flightPath';
 import type { TerrestialPosition } from '@/model/backendModel';
+import { loadIconSvg, determineAircraftCategory, mapProtobufCategoryToIcon, type AircraftCategory } from '@/utils/aircraftIcons';
 
 declare let H: any;
 
@@ -40,6 +41,7 @@ let map: any = null;
 let platform: any = null;
 let ui: any = null;
 let flightPath: FlightPath | null = null;
+let aircraftMarker: any = null;
 
 const apiService = getFlightApiService();
 
@@ -127,6 +129,85 @@ const initializeMap = async () => {
   }
 };
 
+const calculateHeading = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+  const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+            Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+  const heading = Math.atan2(y, x) * 180 / Math.PI;
+  return (heading + 360) % 360;
+};
+
+const createAircraftMarker = async (positions: TerrestialPosition[]) => {
+  if (!map || positions.length === 0) return;
+
+  const lastPosition = positions[positions.length - 1];
+
+  let heading = 0;
+  if (positions.length >= 2) {
+    const secondLastPosition = positions[positions.length - 2];
+    heading = calculateHeading(
+      secondLastPosition.lat,
+      secondLastPosition.lon,
+      lastPosition.lat,
+      lastPosition.lon
+    );
+  } else if (lastPosition.track !== undefined) {
+    heading = lastPosition.track;
+  }
+
+  try {
+    const flight = await apiService.getFlight(props.flightId);
+    let category: AircraftCategory = 'default';
+    let protoCategory: number | undefined;
+
+    if (flight) {
+      const aircraft = await apiService.getAircraft(flight.icao24);
+      if (aircraft) {
+        category = determineAircraftCategory(aircraft.type, aircraft.icaoType);
+      }
+    }
+
+    if (lastPosition.cat !== undefined) {
+      protoCategory = lastPosition.cat;
+      category = mapProtobufCategoryToIcon(protoCategory);
+    }
+
+    const svgContent = await loadIconSvg(category);
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgContent, 'image/svg+xml');
+    const svgElement = doc.querySelector('svg');
+
+    if (!svgElement) return;
+
+    const width = parseFloat(svgElement.getAttribute('width') || '22.5');
+    const height = parseFloat(svgElement.getAttribute('height') || '30');
+
+    svgElement.style.cssText = `
+      position: absolute;
+      left: ${-width / 2}px;
+      top: ${-height / 2}px;
+      width: ${width}px;
+      height: ${height}px;
+      transform: rotate(${heading}deg);
+    `;
+
+    const iconWrapper = document.createElement('div');
+    iconWrapper.className = 'aircraft-icon-marker';
+    iconWrapper.appendChild(svgElement);
+
+    const domIcon = new H.map.DomIcon(iconWrapper);
+    aircraftMarker = new H.map.DomMarker(
+      { lat: lastPosition.lat, lng: lastPosition.lon },
+      { icon: domIcon }
+    );
+
+    map.addObject(aircraftMarker);
+  } catch (error) {
+    console.error('Error creating aircraft marker:', error);
+  }
+};
+
 const loadFlightPath = async () => {
   if (!map || !props.flightId) return;
 
@@ -134,11 +215,11 @@ const loadFlightPath = async () => {
     const positions = await apiService.getPositions(props.flightId);
 
     if (positions.length > 0) {
-      // Create flight path
       flightPath = new FlightPath(props.flightId, map);
       flightPath.createFlightPath(positions);
 
-      // Fit map bounds to flight path
+      await createAircraftMarker(positions);
+
       fitBounds(positions);
     }
   } catch (error) {
@@ -185,6 +266,10 @@ const fitBounds = (positions: TerrestialPosition[]) => {
 const cleanup = () => {
   document.removeEventListener('fullscreenchange', handleFullscreenChange);
 
+  if (aircraftMarker && map) {
+    map.removeObject(aircraftMarker);
+    aircraftMarker = null;
+  }
   if (flightPath) {
     flightPath.removeFlightPath();
     flightPath = null;

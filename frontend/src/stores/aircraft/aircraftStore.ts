@@ -281,6 +281,22 @@ export const useAircraftStore = defineStore('aircraft', () => {
     return aircraftDetailsCache.value.get(icao24);
   }
 
+  /**
+   * Update an aircraft's icao24 field by flight ID.
+   * This is needed because position stream doesn't include icao24.
+   */
+  function updateAircraftIcao24(flightId: string, icao24: string) {
+    const existing = aircraft.value.get(flightId);
+    if (existing && !existing.icao24) {
+      const newMap = new Map(aircraft.value);
+      newMap.set(flightId, {
+        ...existing,
+        icao24,
+      });
+      aircraft.value = newMap;
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════
   // ACTIONS - Selection & UI
   // ═══════════════════════════════════════════════════════════
@@ -391,6 +407,7 @@ export const useAircraftStore = defineStore('aircraft', () => {
     findAircraftByIcao24,
     getActiveAircraft,
     getAircraftDetails,
+    updateAircraftIcao24,
 
     // Actions - UI
     selectFlight,
