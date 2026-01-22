@@ -113,11 +113,35 @@ const loadFlightData = async (flightId: string) => {
         fetchRouteInfo(flightData.cls);
       }
 
-      // Fetch aircraft details
+      // Fetch aircraft details - check cache first
       if (flightData.icao24) {
-        const aircraftData = await apiService.getAircraft(flightData.icao24);
-        if (aircraftData) {
-          aircraft.value = aircraftData;
+        // Check store cache first for optimal performance
+        let cachedDetails = aircraftStore.getAircraftDetails(flightData.icao24);
+
+        if (cachedDetails) {
+          // Use cached data
+          aircraft.value = {
+            icao24: cachedDetails.icao24,
+            type: cachedDetails.type,
+            icaoType: cachedDetails.icaoType,
+            reg: cachedDetails.registration,
+            op: cachedDetails.operator,
+          };
+        } else {
+          // Not in cache - fetch from API
+          const aircraftData = await apiService.getAircraft(flightData.icao24);
+          if (aircraftData) {
+            aircraft.value = aircraftData;
+
+            // Cache the result in the store for future use
+            aircraftStore.cacheAircraftDetails({
+              icao24: flightData.icao24,
+              type: aircraftData.type,
+              icaoType: aircraftData.icaoType,
+              registration: aircraftData.reg,
+              operator: aircraftData.op,
+            });
+          }
         }
       }
 

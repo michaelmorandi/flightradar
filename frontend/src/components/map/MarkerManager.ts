@@ -49,6 +49,10 @@ export class MarkerManager {
         }
       });
       this.markers.set(id, marker);
+
+      // Apply initial position/rotation to newly created marker
+      // This ensures the heading is set correctly from the start
+      marker.updatePosition(coords, groundSpeed);
     }
   }
 

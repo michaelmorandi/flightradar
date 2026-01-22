@@ -406,6 +406,11 @@ export class AircraftMarker {
           const currentTransform = svgElement.style.transform;
           if (currentTransform) {
             restoredSvg.style.transform = currentTransform;
+          } else if (this.coords.heading !== undefined) {
+            // If no rotation was set yet, apply initial heading from coords
+            // This handles the case where the icon loads before the first update
+            restoredSvg.style.transform = `rotate(${this.coords.heading}deg)`;
+            this.aircraftIcon.setLastRotation(this.flightId, this.coords.heading);
           }
 
           // Replace element

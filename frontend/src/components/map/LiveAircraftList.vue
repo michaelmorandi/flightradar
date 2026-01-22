@@ -134,39 +134,8 @@ const onImageError = (event: Event) => {
   }
 };
 
-const activeAircraft = computed(() => {
-  const now = Date.now();
-  const staleThreshold = 15000;
-
-  // Access the details cache - need to use getAircraftDetails for proper reactivity
-  const allAircraft = Array.from(aircraftStore.aircraft.values())
-    .filter(aircraft => {
-      const timeSinceUpdate = now - aircraft.lastUpdate;
-      return timeSinceUpdate < staleThreshold;
-    })
-    .map(aircraft => {
-      const details = aircraftStore.getAircraftDetails(aircraft.icao24);
-
-      return {
-        flightId: aircraft.id,
-        icao24: aircraft.icao24,
-        callsign: aircraft.callsign || '',
-        lat: aircraft.lat,
-        lon: aircraft.lon,
-        alt: aircraft.altitude,
-        gs: aircraft.groundSpeed,
-        track: aircraft.track,
-        operator: aircraft.operator || details?.operator,
-        aircraftType: aircraft.aircraftType || details?.type,
-        icaoType: aircraft.icaoType || details?.icaoType,
-        category: aircraft.category,
-        firstSeen: aircraft.firstSeen,
-      };
-    })
-    .sort((a, b) => b.firstSeen - a.firstSeen);
-
-  return allAircraft;
-});
+// Use pre-computed list from store for optimal reactivity and performance
+const activeAircraft = computed(() => aircraftStore.activeAircraftList);
 
 // Track which flight IDs we've already requested to avoid duplicate requests
 const requestedFlightIds = new Set<string>();

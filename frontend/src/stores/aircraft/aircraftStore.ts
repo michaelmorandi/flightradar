@@ -12,6 +12,7 @@ import type {
   AircraftState,
   PositionUpdate,
   MapAircraftView,
+  ListAircraftView,
   AircraftDetails,
   ConnectionStatus,
 } from './types';
@@ -80,6 +81,38 @@ export const useAircraftStore = defineStore('aircraft', () => {
   const mapView = computed<Map<string, MapAircraftView>>(() => {
     const now = Date.now();
     return buildMapView(aircraft.value, now, staleThreshold);
+  });
+
+  /**
+   * List-ready view of all active aircraft.
+   * Pre-computed for list display - includes all aircraft details.
+   * Sorted by firstSeen (newest first) for optimal list rendering.
+   */
+  const activeAircraftList = computed<ListAircraftView[]>(() => {
+    const now = Date.now();
+
+    return Array.from(aircraft.value.values())
+      .filter(ac => (now - ac.lastUpdate) < staleThreshold)
+      .map(ac => {
+        const details = aircraftDetailsCache.value.get(ac.icao24);
+
+        return {
+          flightId: ac.id,
+          icao24: ac.icao24,
+          callsign: ac.callsign,
+          lat: ac.lat,
+          lon: ac.lon,
+          altitude: ac.altitude,
+          groundSpeed: ac.groundSpeed,
+          track: ac.track,
+          operator: ac.operator || details?.operator,
+          aircraftType: ac.aircraftType || details?.type,
+          icaoType: ac.icaoType || details?.icaoType,
+          category: ac.category,
+          firstSeen: ac.firstSeen,
+        };
+      })
+      .sort((a, b) => b.firstSeen - a.firstSeen);
   });
 
   /**
@@ -387,6 +420,7 @@ export const useAircraftStore = defineStore('aircraft', () => {
 
     // Computed views
     mapView,
+    activeAircraftList,
     activeCount,
     totalCount,
     selectedAircraft,

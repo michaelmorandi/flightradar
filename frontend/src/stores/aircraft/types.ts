@@ -128,6 +128,52 @@ export interface MapAircraftView {
 }
 
 /**
+ * List-optimized view of aircraft data.
+ * Pre-computed for list display - includes all data needed for the
+ * aircraft list component without requiring additional queries.
+ */
+export interface ListAircraftView {
+  /** Flight ID */
+  flightId: string;
+
+  /** 24-bit ICAO address */
+  icao24: string;
+
+  /** Callsign */
+  callsign?: string;
+
+  /** Latitude */
+  lat: number;
+
+  /** Longitude */
+  lon: number;
+
+  /** Altitude in feet */
+  altitude?: number;
+
+  /** Ground speed in knots */
+  groundSpeed?: number;
+
+  /** Track/heading */
+  track?: number;
+
+  /** Operator name (from state or cache) */
+  operator?: string;
+
+  /** Full aircraft type name */
+  aircraftType?: string;
+
+  /** ICAO aircraft type designator */
+  icaoType?: string;
+
+  /** ADS-B category */
+  category?: number;
+
+  /** First seen timestamp */
+  firstSeen: number;
+}
+
+/**
  * Position data for flight history/path rendering.
  */
 export interface HistoryPosition {

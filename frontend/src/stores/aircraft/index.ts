@@ -12,6 +12,7 @@ export { useFlightHistoryStore } from './flightHistoryStore';
 export type {
   AircraftState,
   MapAircraftView,
+  ListAircraftView,
   HistoryPosition,
   PositionUpdate,
   AircraftDetails,
