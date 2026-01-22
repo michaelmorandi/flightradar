@@ -49,8 +49,9 @@ export class FlightApiService {
    * @param limit Maximum number of flights to return per page
    * @param mil Filter by military status: true for military only, false for civilian only, undefined for all
    * @param page Page number (1-indexed)
+   * @param excludeLive If true, exclude flights with last contact within 5 minutes
    */
-  async getFlights(limit: number = 50, mil?: boolean, page: number = 1): Promise<PaginatedFlightsResponse> {
+  async getFlights(limit: number = 50, mil?: boolean, page: number = 1, excludeLive: boolean = false): Promise<PaginatedFlightsResponse> {
     if (!this.apiUrl) {
       console.warn('Flight API URL not configured');
       return {
@@ -72,6 +73,9 @@ export class FlightApiService {
     });
     if (mil !== undefined) {
       params.append('mil', mil.toString());
+    }
+    if (excludeLive) {
+      params.append('exclude_live', 'true');
     }
 
     try {

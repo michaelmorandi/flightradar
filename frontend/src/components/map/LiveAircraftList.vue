@@ -13,10 +13,6 @@
     <!-- Main sidebar content -->
     <template v-if="!isSidebarCollapsed">
       <div class="list-header">
-        <h3 class="list-title">
-          <i class="bi bi-radar"></i>
-          Live Aircraft
-        </h3>
         <button
           class="mobile-toggle"
           @click="toggleMobileCollapse"
@@ -24,7 +20,6 @@
         >
           <i :class="isMobileCollapsed ? 'bi bi-chevron-up' : 'bi bi-chevron-down'"></i>
         </button>
-        <span class="aircraft-count">{{ activeAircraft.length }}</span>
         <button
           class="sidebar-collapse-btn"
           @click="toggleSidebarCollapse"
@@ -223,13 +218,12 @@ const selectAircraft = (flightId: string) => {
 }
 
 .sidebar-collapse-btn {
-  background: none;
+  background: rgba(255, 255, 255, 0.8);
   border: none;
-  padding: 4px 8px;
+  padding: 2px 4px;
   cursor: pointer;
   color: #666;
-  font-size: 1rem;
-  margin-left: 8px;
+  font-size: 0.8rem;
   border-radius: 4px;
   transition: background-color 0.2s;
 }
@@ -274,24 +268,9 @@ const selectAircraft = (flightId: string) => {
 .list-header {
   display: flex;
   align-items: center;
-  padding: 10px 12px;
-  border-bottom: 1px solid #e0e0e0;
-  background: #fff;
-}
-
-.list-title {
-  font-size: 1rem;
-  font-weight: 600;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #333;
-  flex: 1;
-}
-
-.list-title i {
-  color: #0d6efd;
+  justify-content: flex-end;
+  padding: 4px;
+  background: transparent;
 }
 
 .mobile-toggle {
@@ -301,16 +280,6 @@ const selectAircraft = (flightId: string) => {
   cursor: pointer;
   color: #666;
   font-size: 1.2rem;
-}
-
-.aircraft-count {
-  background: #0d6efd;
-  color: white;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  margin-left: 8px;
 }
 
 .search-bar {

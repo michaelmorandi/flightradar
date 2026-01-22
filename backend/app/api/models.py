@@ -17,7 +17,7 @@ class FlightDto(BaseModel):
     cls: Optional[str] = None
     lstCntct: str
     firstCntct: str
-    positionCount: Optional[int] = Field(None, alias="position_count")
+    positionCount: Optional[int] = None
 
     class Config:
         arbitrary_types_allowed = True

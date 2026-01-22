@@ -1,6 +1,6 @@
 <template>
   <div class="flLogEntry">
-    <div class="entry-content" @click="toggleMap">
+    <div class="entry-content" :class="{ 'clickable': hasPositions || isLive }" @click="toggleMap">
       <div class="silhouette" data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true" :data-bs-title="operatorTooltip">
         <img
           :src="silhouetteSrc"
@@ -20,7 +20,7 @@
         :class="{ 'active': showMap, 'live': isLive }"
         :aria-label="isLive ? 'View on live map' : 'Toggle map'"
       >
-        <i :class="isLive ? 'bi bi-broadcast' : 'bi bi-map'"></i>
+        <i :class="isLive ? 'bi bi-broadcast' : 'bi bi-geo-alt'"></i>
       </button>
     </div>
     <FlightLogMiniMap
@@ -142,8 +142,8 @@ const toggleMap = () => {
     // For live aircraft, switch to live view and select the flight
     aircraftStore.selectFlight(props.flight.id);
     viewStore.showLive();
-  } else {
-    // For past flights, toggle the inline mini map
+  } else if (hasPositions.value) {
+    // For past flights with positions, toggle the inline mini map
     showMap.value = !showMap.value;
   }
 };
@@ -167,6 +167,9 @@ const toggleMap = () => {
   display: flex;
   align-items: center;
   padding: 8px 0;
+}
+
+.entry-content.clickable {
   cursor: pointer;
 }
 

@@ -100,8 +100,10 @@ const apiService = getFlightApiService();
 const loadData = async () => {
   loading.value = true;
   try {
-    const mil = militaryFilter.value ? true : false;
-    const response = await apiService.getFlights(PAGE_SIZE, mil, currentPage.value);
+    // Pass undefined when filter is off to get all flights (mil and non-mil)
+    // excludeLive=true filters out flights with last contact within 5 minutes
+    const mil = militaryFilter.value ? true : undefined;
+    const response = await apiService.getFlights(PAGE_SIZE, mil, currentPage.value, true);
     flights.value = response.flights;
     totalFlights.value = response.total;
     totalPages.value = response.totalPages;

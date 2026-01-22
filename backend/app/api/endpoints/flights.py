@@ -96,7 +96,8 @@ async def get_flights(
     repository: MongoDBRepositoryDep,
     mil: Optional[bool] = Query(None, description="Filter by military status: true for military only, false for civilian only, omit for all"),
     limit: Optional[int] = Query(None, description="Maximum number of flights to return per page"),
-    page: Optional[int] = Query(1, description="Page number (1-indexed)", ge=1)
+    page: Optional[int] = Query(1, description="Page number (1-indexed)", ge=1),
+    exclude_live: bool = Query(False, description="Exclude flights with last contact within 5 minutes")
 ):
     """
     Get past flights from the database with pagination.
@@ -113,7 +114,8 @@ async def get_flights(
         limit=applied_limit,
         is_military=mil,
         page=page,
-        include_position_count=True
+        include_position_count=True,
+        exclude_live=exclude_live
     )
 
     return PaginatedFlightsResponse(
@@ -376,11 +378,12 @@ async def sse_flight_positions(request: Request, flight_id: str):
                 last_position = all_positions[-1] if all_positions else None
 
             # Send initial message with all positions
-            yield f"event: flight_position\ndata: {json.dumps({
+            initial_data = json.dumps({
                 'type': 'initial',
                 'count': len(all_positions),
                 'positions': {flight_id: all_positions} if all_positions else {}
-            })}\n\n"
+            })
+            yield f"event: flight_position\ndata: {initial_data}\n\n"
             
             # Callback for live position updates
             async def send_flight_position_updates(positions_dict):

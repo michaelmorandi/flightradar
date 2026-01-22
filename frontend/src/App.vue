@@ -17,7 +17,7 @@
         @click.prevent="viewStore.showLog()"
       >
         <i class="bi bi-card-list"></i>
-        <span>Log</span>
+        <span>Flight history</span>
       </a>
     </div>
   </nav>
@@ -30,9 +30,10 @@
 </template>
 
 <script>
-import { defineComponent } from 'vue';
+import { defineComponent, watch, computed } from 'vue';
 import { Tooltip } from 'bootstrap';
 import { useViewStore } from './stores/viewStore';
+import { useAircraftStore } from './stores/aircraft';
 import LiveRadar from './views/LiveRadar.vue';
 import FlightLog from './views/FlightLog.vue';
 
@@ -46,6 +47,15 @@ export default defineComponent({
 
   setup() {
     const viewStore = useViewStore();
+    const aircraftStore = useAircraftStore();
+
+    const liveCount = computed(() => aircraftStore.activeAircraftList.length);
+
+    // Update browser tab title with live aircraft count
+    watch(liveCount, (count) => {
+      document.title = count > 0 ? `Flightradar (${count})` : 'Flightradar';
+    }, { immediate: true });
+
     return { viewStore };
   },
 

@@ -229,7 +229,8 @@ class MongoDBRepository:
         limit: int = 100,
         is_military: Optional[bool] = None,
         page: int = 1,
-        include_position_count: bool = False
+        include_position_count: bool = False,
+        exclude_live: bool = False
     ) -> Dict[str, Any]:
         """
         Get recent flights sorted by last_contact descending with pagination.
@@ -240,6 +241,7 @@ class MongoDBRepository:
                         If None, return all flights.
             page: Page number (1-indexed)
             include_position_count: If True, include position count for each flight
+            exclude_live: If True, exclude flights with last_contact within 5 minutes
 
         Returns:
             Dictionary with 'flights' list, 'total' count, 'page', 'page_size', and 'total_pages'
@@ -248,6 +250,10 @@ class MongoDBRepository:
 
         if is_military is not None:
             query["is_military"] = is_military
+
+        if exclude_live:
+            five_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
+            query["last_contact"] = {"$lt": five_minutes_ago}
 
         # Get total count for pagination metadata
         total = self.flights_collection.count_documents(query)
