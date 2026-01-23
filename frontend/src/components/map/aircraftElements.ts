@@ -128,6 +128,12 @@ export class AircraftIcon {
           });
 
           this.visibleElementsCache.set(flightId, { fillableElements, strokeableElements });
+
+          // Restore the last known rotation
+          const lastRotation = this.lastRotationMap.get(flightId);
+          if (lastRotation !== undefined) {
+            restoredSvg.style.transform = `rotate(${lastRotation}deg)`;
+          }
         } else {
           this.iconSvgMap.set(flightId, clonedContent);
         }
