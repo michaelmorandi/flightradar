@@ -19,10 +19,10 @@ dependencies = [
     "grpcio>=1.60.0",
     "grpcio-tools>=1.60.0",
     "protobuf>=4.25.0",
-    "python-jose[cryptography]==3.3.0",
+    "python-jose[cryptography]==3.5.0",
     "passlib[bcrypt]==1.7.4",
     "slowapi==0.1.9",
-    "fastapi-users[beanie]==14.0.1",
+    "fastapi-users[beanie]==15.0.3",
     "beanie>=1.25.0",
     "motor>=3.3.0"
 ]
