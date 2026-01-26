@@ -8,6 +8,11 @@
  * 1. POST /auth/jwt/login with email/password
  * 2. Receive JWT as HTTP-only cookie
  * 3. Auto-refresh before expiration
+ *
+ * Admin Authentication:
+ * - Admin users can login via adminLogin()
+ * - Admin state is restored from cookie on page reload
+ * - Admin logout falls back to anonymous auth
  */
 
 import axios, { type AxiosInstance } from 'axios';
@@ -22,12 +27,23 @@ const TOKEN_LIFETIME_SECONDS = 900; // 15 minutes
 /** Anonymous user email */
 const ANONYMOUS_EMAIL = 'anonymous@system.local';
 
+/** Admin user email */
+const ADMIN_EMAIL = 'admin@system.local';
+
+interface UserInfo {
+  email: string;
+  role: string;
+  is_admin: boolean;
+}
+
 export class AuthService {
   private axios: AxiosInstance;
   private apiUrl: string;
   private clientSecret: string;
   private refreshTimer: number | null = null;
   private isAuthenticated = false;
+  private _isAdmin = false;
+  private adminPassword: string | null = null;
 
   constructor() {
     this.axios = axios.create({
@@ -50,10 +66,34 @@ export class AuthService {
   }
 
   /**
-   * Initialize authentication with anonymous login.
+   * Check if current user is admin.
+   */
+  public isAdmin(): boolean {
+    return this._isAdmin;
+  }
+
+  /**
+   * Check current session status by calling /auth/me.
+   * Returns user info if authenticated, null otherwise.
+   */
+  private async checkSession(): Promise<UserInfo | null> {
+    try {
+      const response = await this.axios.get<UserInfo>(`${this.apiUrl}/auth/me`);
+      if (response.status === 200) {
+        return response.data;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Initialize authentication.
    *
-   * This should be called when the application starts.
-   * On success, JWT cookie is set and auto-refresh is scheduled.
+   * First checks if there's an existing valid session (e.g., after page reload).
+   * If the session is admin, restores admin state.
+   * Otherwise, authenticates as anonymous.
    *
    * @throws Error if authentication fails
    */
@@ -62,22 +102,42 @@ export class AuthService {
       throw new Error('Flight API URL not configured');
     }
 
+    console.log('[Auth] Initializing authentication...');
+
+    // First, check if we have an existing valid session
+    const existingSession = await this.checkSession();
+
+    if (existingSession) {
+      console.log(`[Auth] Existing session found: ${existingSession.role}`);
+      this.isAuthenticated = true;
+      this._isAdmin = existingSession.is_admin;
+
+      if (this._isAdmin) {
+        console.log('[Auth] Restored admin session');
+      }
+
+      // Schedule token refresh
+      this.scheduleRefresh(TOKEN_LIFETIME_SECONDS);
+      return;
+    }
+
+    // No existing session, authenticate as anonymous
     if (!this.clientSecret) {
       throw new Error('Client secret not configured');
     }
-
-    console.log('[Auth] Initializing authentication...');
 
     try {
       await this.login(ANONYMOUS_EMAIL, this.clientSecret);
 
       this.isAuthenticated = true;
+      this._isAdmin = false;
       console.log('[Auth] Authentication successful');
 
       // Schedule token refresh
       this.scheduleRefresh(TOKEN_LIFETIME_SECONDS);
     } catch (error) {
       this.isAuthenticated = false;
+      this._isAdmin = false;
       console.error('[Auth] Authentication failed:', error);
       throw new Error('Failed to authenticate with API');
     }
@@ -106,23 +166,123 @@ export class AuthService {
   }
 
   /**
-   * Refresh the authentication token by re-logging in.
+   * Login as admin user using the dedicated admin login endpoint.
+   * This endpoint returns 401 on failure (not 400 like the standard endpoint).
    *
-   * This is called automatically before expiration.
+   * @param password Admin password
+   * @throws Error if login fails
+   */
+  public async adminLogin(password: string): Promise<void> {
+    console.log('[Auth] Logging in as admin...');
+
+    const formData = new URLSearchParams();
+    formData.append('username', ADMIN_EMAIL);
+    formData.append('password', password);
+
+    try {
+      const response = await this.axios.post(`${this.apiUrl}/admin/login`, formData, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      });
+
+      if (response.status !== 200) {
+        throw new Error('Login failed');
+      }
+
+      this._isAdmin = true;
+      this.adminPassword = password;
+      this.isAuthenticated = true;
+      console.log('[Auth] Admin login successful');
+
+      // Schedule token refresh for admin
+      this.scheduleRefresh(TOKEN_LIFETIME_SECONDS);
+    } catch (error) {
+      console.error('[Auth] Admin login failed:', error);
+      throw new Error('Invalid admin credentials');
+    }
+  }
+
+  /**
+   * Logout admin and fall back to anonymous auth.
+   */
+  public async adminLogout(): Promise<void> {
+    console.log('[Auth] Admin logout, falling back to anonymous...');
+
+    if (this.refreshTimer !== null) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+
+    this._isAdmin = false;
+    this.adminPassword = null;
+
+    try {
+      // Log out first
+      await this.axios.post(`${this.apiUrl}/auth/jwt/logout`);
+    } catch (error) {
+      console.error('[Auth] Logout request failed:', error);
+    }
+
+    // Re-authenticate as anonymous
+    try {
+      await this.login(ANONYMOUS_EMAIL, this.clientSecret);
+      this.isAuthenticated = true;
+      console.log('[Auth] Fallback to anonymous auth successful');
+      this.scheduleRefresh(TOKEN_LIFETIME_SECONDS);
+    } catch (error) {
+      this.isAuthenticated = false;
+      console.error('[Auth] Fallback to anonymous auth failed:', error);
+    }
+  }
+
+  /**
+   * Refresh the authentication token.
+   *
+   * For admin sessions without stored password, checks if session is still valid.
+   * Otherwise re-logins with stored credentials.
    */
   public async refresh(): Promise<void> {
-    if (!this.apiUrl || !this.clientSecret) {
+    if (!this.apiUrl) {
       throw new Error('Authentication not properly configured');
     }
 
     console.log('[Auth] Refreshing token...');
 
     try {
-      await this.login(ANONYMOUS_EMAIL, this.clientSecret);
-      console.log('[Auth] Token refreshed successfully');
+      if (this._isAdmin && this.adminPassword) {
+        // Refresh as admin with stored password using admin endpoint
+        const formData = new URLSearchParams();
+        formData.append('username', ADMIN_EMAIL);
+        formData.append('password', this.adminPassword);
+        await this.axios.post(`${this.apiUrl}/admin/login`, formData, {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        });
+        console.log('[Auth] Admin token refreshed successfully');
+      } else if (this._isAdmin) {
+        // Admin session restored from cookie - check if still valid
+        const session = await this.checkSession();
+        if (session?.is_admin) {
+          console.log('[Auth] Admin session still valid');
+        } else {
+          // Session expired or no longer admin, fall back to anonymous
+          console.log('[Auth] Admin session expired, falling back to anonymous');
+          this._isAdmin = false;
+          await this.login(ANONYMOUS_EMAIL, this.clientSecret);
+        }
+      } else {
+        // Refresh as anonymous
+        if (!this.clientSecret) {
+          throw new Error('Client secret not configured');
+        }
+        await this.login(ANONYMOUS_EMAIL, this.clientSecret);
+        console.log('[Auth] Token refreshed successfully');
+      }
       this.scheduleRefresh(TOKEN_LIFETIME_SECONDS);
     } catch (error) {
       this.isAuthenticated = false;
+      this._isAdmin = false;
+      this.adminPassword = null;
       console.error('[Auth] Token refresh failed:', error);
       throw error;
     }
@@ -148,6 +308,8 @@ export class AuthService {
     }
 
     this.isAuthenticated = false;
+    this._isAdmin = false;
+    this.adminPassword = null;
     console.log('[Auth] Logged out');
   }
 

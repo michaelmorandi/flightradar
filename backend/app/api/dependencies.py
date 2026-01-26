@@ -1,5 +1,5 @@
 from typing import Annotated, Optional
-from fastapi import Depends
+from fastapi import Depends, HTTPException, status
 from pymongo.database import Database
 
 from ..data.repositories.aircraft_repository import AircraftRepository
@@ -60,4 +60,22 @@ CurrentUserDep = Annotated[User, Depends(_current_active_user)]
 
 # Type annotation for optional user dependency
 OptionalUserDep = Annotated[Optional[User], Depends(_current_optional_user)]
+
+
+def require_admin_user(current_user: CurrentUserDep) -> User:
+    """
+    Dependency that requires the current user to have admin role.
+
+    Raises HTTPException 403 if user is not an admin.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return current_user
+
+
+# Type annotation for admin user dependency
+AdminUserDep = Annotated[User, Depends(require_admin_user)]
 

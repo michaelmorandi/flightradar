@@ -1,36 +1,45 @@
 <template>
-  <nav class="app-nav">
-    <div class="nav-tabs">
-      <a
-        href="#"
-        class="nav-tab"
-        :class="{ active: viewStore.currentView === 'live' }"
-        @click.prevent="viewStore.showLive()"
-      >
-        <i class="bi bi-radar"></i>
-        <span>Live</span>
-      </a>
-      <a
-        href="#"
-        class="nav-tab"
-        :class="{ active: viewStore.currentView === 'log' }"
-        @click.prevent="viewStore.showLog()"
-      >
-        <i class="bi bi-card-list"></i>
-        <span>Flight history</span>
-      </a>
+  <!-- Dashboard routes use router-view -->
+  <template v-if="isDashboardRoute">
+    <router-view />
+  </template>
+
+  <!-- Main app with nav for live/log views -->
+  <template v-else>
+    <nav class="app-nav">
+      <div class="nav-tabs">
+        <a
+          href="#"
+          class="nav-tab"
+          :class="{ active: viewStore.currentView === 'live' }"
+          @click.prevent="viewStore.showLive()"
+        >
+          <i class="bi bi-radar"></i>
+          <span>Live</span>
+        </a>
+        <a
+          href="#"
+          class="nav-tab"
+          :class="{ active: viewStore.currentView === 'log' }"
+          @click.prevent="viewStore.showLog()"
+        >
+          <i class="bi bi-card-list"></i>
+          <span>Flight history</span>
+        </a>
+      </div>
+    </nav>
+    <div v-show="viewStore.currentView === 'live'">
+      <LiveRadar />
     </div>
-  </nav>
-  <div v-show="viewStore.currentView === 'live'">
-    <LiveRadar />
-  </div>
-  <div v-show="viewStore.currentView === 'log'">
-    <FlightLog />
-  </div>
+    <div v-show="viewStore.currentView === 'log'">
+      <FlightLog />
+    </div>
+  </template>
 </template>
 
 <script>
 import { defineComponent, watch, computed } from 'vue';
+import { useRoute } from 'vue-router';
 import { Tooltip } from 'bootstrap';
 import { useViewStore } from './stores/viewStore';
 import { useAircraftStore } from './stores/aircraft';
@@ -46,17 +55,23 @@ export default defineComponent({
   },
 
   setup() {
+    const route = useRoute();
     const viewStore = useViewStore();
     const aircraftStore = useAircraftStore();
 
     const liveCount = computed(() => aircraftStore.activeAircraftList.length);
+
+    // Check if current route is a dashboard route
+    const isDashboardRoute = computed(() => {
+      return route.path.startsWith('/dashboard');
+    });
 
     // Update browser tab title with live aircraft count
     watch(liveCount, (count) => {
       document.title = count > 0 ? `Flightradar (${count})` : 'Flightradar';
     }, { immediate: true });
 
-    return { viewStore };
+    return { viewStore, isDashboardRoute };
   },
 
   mounted() {

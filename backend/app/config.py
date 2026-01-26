@@ -75,6 +75,9 @@ class Config:
     # Client secret for anonymous user authentication
     CLIENT_SECRET = None  # Required - must match frontend VITE_CLIENT_SECRET
 
+    # Admin user password (set via ADMIN_PASSWORD environment variable)
+    ADMIN_PASSWORD = None
+
     # Allowed frontend origins (comma-separated)
     # Used for CORS and cookie security
     ALLOWED_ORIGINS = None
@@ -111,6 +114,7 @@ class Config:
         ENV_JWT_SECRET = 'JWT_SECRET'
         ENV_JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 'JWT_ACCESS_TOKEN_EXPIRE_MINUTES'
         ENV_CLIENT_SECRET = 'CLIENT_SECRET'
+        ENV_ADMIN_PASSWORD = 'ADMIN_PASSWORD'
         ENV_ALLOWED_ORIGINS = 'ALLOWED_ORIGINS'
 
         if os.environ.get(ENV_DATA_FOLDER):
@@ -152,6 +156,8 @@ class Config:
             self.CLIENT_SECRET = os.environ.get(ENV_CLIENT_SECRET)
         elif os.environ.get('VITE_CLIENT_SECRET'):
             self.CLIENT_SECRET = os.environ.get('VITE_CLIENT_SECRET')
+        if os.environ.get(ENV_ADMIN_PASSWORD):
+            self.ADMIN_PASSWORD = os.environ.get(ENV_ADMIN_PASSWORD)
         if os.environ.get(ENV_ALLOWED_ORIGINS):
             self.ALLOWED_ORIGINS = os.environ.get(ENV_ALLOWED_ORIGINS)
         self.config_src = ConfigSource.ENV

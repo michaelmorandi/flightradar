@@ -10,7 +10,7 @@ from .meta import MetaInformation
 from .data import init_mongodb
 from .core.utils.logging import init_logging
 from .middleware import limiter, rate_limit_exceeded_handler
-from .auth import init_auth_database, close_auth_database, ensure_anonymous_user
+from .auth import init_auth_database, close_auth_database, ensure_anonymous_user, ensure_admin_user
 from .auth.config import setup_auth_routes
 
 from .scheduling import configure_scheduling
@@ -66,7 +66,7 @@ def create_app():
         CORSMiddleware,
         allow_origins=allowed_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "OPTIONS"],
         allow_headers=["Content-Type", "Authorization", "Pragma", "Cache-Control", "Expires"],
     )
 
@@ -95,6 +95,10 @@ def create_app():
         # Ensure anonymous user exists for backward compatibility
         if conf.CLIENT_SECRET:
             await ensure_anonymous_user(conf.CLIENT_SECRET)
+
+        # Ensure admin user exists if password is configured
+        if conf.ADMIN_PASSWORD:
+            await ensure_admin_user(conf.ADMIN_PASSWORD)
 
         configure_scheduling(app, conf)
 
