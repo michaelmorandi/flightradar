@@ -59,11 +59,18 @@ class IncompleteAircraftManager:
 
     def _classify_unknown_aircraft(self, icao24s: Set[str]) -> List[str]:
         """
-        Classify aircraft as unknown based on the three criteria
-        
+        Classify aircraft as unknown based on staleness criteria.
+
+        Aircraft are queued for processing only if:
+        1. Aircraft not present in aircraft collection
+        2. Aircraft has lastModified date older than 4 months (120 days)
+
+        Note: Aircraft with incomplete data but recent lastModified are NOT re-queued.
+        This prevents retry loops when external sources return partial data.
+
         Args:
             icao24s: Set of ICAO24 addresses to classify
-            
+
         Returns:
             List of ICAO24 addresses that are classified as unknown
         """
@@ -72,8 +79,12 @@ class IncompleteAircraftManager:
 
         for icao24 in icao24s:
             try:
+                # Skip if already in processing queue (being crawled)
+                if self.processing_aircraft_repo.aircraft_exists(icao24):
+                    continue
+
                 existing_aircraft = self.aircraft_repo.query_aircraft(icao24)
-                
+
                 if existing_aircraft is None:
                     # Criteria 1: Aircraft not present in aircraft collection
                     logger.debug(f"Aircraft {icao24} not found in database")
@@ -86,21 +97,15 @@ class IncompleteAircraftManager:
 
                 if aircraft_doc:
                     last_modified = aircraft_doc.get("lastModified")
-                    if last_modified and last_modified >= four_months_ago:
-                        if not self._has_missing_critical_fields(aircraft_doc):
-                            logger.debug(f"Aircraft {icao24} is up-to-date and complete, skipping")
-                            continue
-                    
-                    # Criteria 2: Aircraft with lastModified date older than 4 months
+
+                    # Only re-queue if data is stale (older than 4 months)
+                    # Do NOT re-queue just because data is incomplete - this prevents
+                    # retry loops when external sources consistently return partial data
                     if last_modified is None or last_modified < four_months_ago:
                         logger.debug(f"Aircraft {icao24} is stale (lastModified: {last_modified})")
                         aircraft_to_process.append(icao24)
-                        continue
-
-                    # Criteria 3: Aircraft with missing critical fields
-                    if self._has_missing_critical_fields(aircraft_doc):
-                        logger.debug(f"Aircraft {icao24} has missing critical fields")
-                        aircraft_to_process.append(icao24)
+                    else:
+                        logger.debug(f"Aircraft {icao24} was recently updated, skipping")
 
             except Exception as e:
                 logger.warning(f"Error classifying aircraft {icao24}: {e}")

@@ -1,6 +1,7 @@
 from ..data.sources.metadata_sources.openskynet import OpenskyNet
 from ..data.sources.metadata_sources.hexdb_io import HexdbIo
 from ..data.sources.metadata_sources import AircraftMetadataSource
+from ..data.sources.radar_services.nighthawk_proxy import NighthawkProxy
 from ..core.models.aircraft import Aircraft
 from ..data.repositories.aircraft_repository import AircraftRepository
 from ..data.repositories.aircraft_processing_repository import AircraftProcessingRepository
@@ -26,26 +27,62 @@ class AirplaneCrawler:
             OpenskyNet(),
         ]
 
+        if config.NIGHTHAWK_PROXY_URL:
+            self.sources.append(NighthawkProxy(base_url=config.NIGHTHAWK_PROXY_URL))
+
     def _query_aircraft_metadata(self, icao24: str) -> Optional[Aircraft]:
-        """Query metadata sources for aircraft information"""
-        
+        """Query metadata sources for aircraft information.
+
+        Queries sources in order until complete data is found.
+        If no source provides complete data, returns the best merged
+        partial result from all sources.
+        """
+
+        best_result: Optional[Aircraft] = None
+        sources_used: List[str] = []
+
         for source in self.sources:
             if not source.accept(icao24):
                 continue
-                
+
             try:
                 aircraft = source.query_aircraft(icao24)
-                
+
                 if aircraft:
-                    logger.info(f'Updated {icao24} from {source.name()}')
-                    return aircraft
+                    if aircraft.is_complete_with_operator():
+                        # Found complete data, return immediately
+                        logger.info(f'Found complete data for {icao24} from {source.name()}')
+                        return aircraft
+
+                    # Partial data - merge with best result so far
+                    if best_result is None:
+                        best_result = aircraft
+                        sources_used.append(source.name())
+                        logger.debug(f'Partial data for {icao24} from {source.name()}')
+                    else:
+                        if best_result.merge(aircraft):
+                            sources_used.append(source.name())
+                            logger.debug(f'Merged additional data for {icao24} from {source.name()}')
+
+                        # Check if merged result is now complete
+                        if best_result.is_complete_with_operator():
+                            best_result.source = '+'.join(sources_used)
+                            logger.info(f'Merged complete data for {icao24} from {best_result.source}')
+                            return best_result
                 else:
                     logger.debug(f'No data found for {icao24} from {source.name()}')
-                    
+
             except Exception as e:
                 logger.warning(f'Error from {source.name()} for {icao24}: {e}')
-                    
-        return None
+
+        # Return best partial result (may still be incomplete)
+        if best_result and len(sources_used) > 1:
+            best_result.source = '+'.join(sources_used)
+
+        if best_result:
+            logger.info(f'Returning {"partial" if not best_result.is_complete_with_operator() else "complete"} data for {icao24} from {best_result.source}')
+
+        return best_result
 
     def crawl_sources(self) -> None:
         """Process aircraft from the collection that need metadata"""

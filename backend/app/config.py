@@ -67,6 +67,9 @@ class Config:
     # gRPC configuration (used when RADAR_SERVICE_TYPE = 'grpc')
     GRPC_SERVER_ADDRESS = 'localhost:50051'
 
+    # Nighthawk proxy URL for aircraft metadata lookups (disabled if not set)
+    NIGHTHAWK_PROXY_URL = None
+
     # JWT Authentication configuration
     JWT_SECRET = None  # Required - must be set via environment variable
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 15  # Token lifetime in minutes
@@ -116,6 +119,7 @@ class Config:
         ENV_CLIENT_SECRET = 'CLIENT_SECRET'
         ENV_ADMIN_PASSWORD = 'ADMIN_PASSWORD'
         ENV_ALLOWED_ORIGINS = 'ALLOWED_ORIGINS'
+        ENV_NIGHTHAWK_PROXY_URL = 'NIGHTHAWK_PROXY_URL'
 
         if os.environ.get(ENV_DATA_FOLDER):
             self.DATA_FOLDER = os.environ.get(ENV_DATA_FOLDER)
@@ -160,6 +164,8 @@ class Config:
             self.ADMIN_PASSWORD = os.environ.get(ENV_ADMIN_PASSWORD)
         if os.environ.get(ENV_ALLOWED_ORIGINS):
             self.ALLOWED_ORIGINS = os.environ.get(ENV_ALLOWED_ORIGINS)
+        if os.environ.get(ENV_NIGHTHAWK_PROXY_URL):
+            self.NIGHTHAWK_PROXY_URL = self.sanitize_url(os.environ.get(ENV_NIGHTHAWK_PROXY_URL))
         self.config_src = ConfigSource.ENV
 
     def __str__(self):

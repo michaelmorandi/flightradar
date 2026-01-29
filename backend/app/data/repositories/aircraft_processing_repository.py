@@ -45,7 +45,7 @@ class AircraftProcessingRepository:
                 ("query_attempts", 1),
                 ("_id", 1)
             ]).limit(limit)
-            
+
             return [doc["modeS"] for doc in cursor]
         except PyMongoError as e:
             logger.error(f"Failed to get aircraft for processing: {e}")
