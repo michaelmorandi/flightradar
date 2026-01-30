@@ -13,17 +13,41 @@ from pydantic import BaseModel
 from pymongo.database import Database
 from pymongo import ReturnDocument
 
+from fastapi import Request
+
 from .. import router
 from ..dependencies import AdminUserDep, CurrentUserDep, get_mongodb, get_config
 from ...auth.models import User
 from ...auth.anonymous import ADMIN_EMAIL, password_helper
 from ...auth.config import get_jwt_strategy, cookie_transport
 from ...config import Config
+from ...data.repositories.aircraft_processing_repository import AircraftProcessingRepository
 
 
 class DashboardStats(BaseModel):
     """Dashboard statistics response model."""
     flight_count: int
+
+
+class CircuitBreakerStats(BaseModel):
+    """Circuit breaker status for a single source."""
+    state: str
+    consecutive_failures: int
+    total_failures: int
+    total_successes: int
+    seconds_until_retry: float
+
+
+class CrawlerStats(BaseModel):
+    """Crawler processing queue statistics."""
+    enabled: bool
+    queue_total: int
+    queue_pending: int
+    queue_in_progress: int
+    not_found_failures: int
+    service_error_failures: int
+    max_attempts_reached: int
+    circuit_breakers: dict[str, CircuitBreakerStats]
 
 
 class UserInfo(BaseModel):
@@ -222,4 +246,52 @@ async def update_aircraft(
         source=result.get("source"),
         first_created=result.get("firstCreated").isoformat() if result.get("firstCreated") else None,
         last_modified=result.get("lastModified").isoformat() if result.get("lastModified") else None,
+    )
+
+
+@router.get('/admin/crawler/stats', response_model=CrawlerStats, tags=["admin"])
+async def get_crawler_stats(
+    request: Request,
+    current_user: AdminUserDep,
+    mongodb: Database = Depends(get_mongodb),
+    config: Config = Depends(get_config)
+) -> CrawlerStats:
+    """
+    Get crawler processing queue statistics.
+
+    Returns queue size, failure rates, and circuit breaker status for each source.
+    Used by the admin dashboard for monitoring crawler health.
+    """
+    crawler_enabled = config.UNKNOWN_AIRCRAFT_CRAWLING
+
+    # Get processing queue stats
+    processing_repo = AircraftProcessingRepository(
+        mongodb,
+        max_attempts=config.CRAWLER_MAX_ATTEMPTS,
+        service_error_reset_hours=config.CRAWLER_SERVICE_ERROR_RESET_HOURS
+    )
+    queue_stats = processing_repo.get_stats()
+
+    # Get circuit breaker stats from the crawler if available
+    circuit_breaker_stats = {}
+    if hasattr(request.app.state, 'crawler') and request.app.state.crawler:
+        raw_cb_stats = request.app.state.crawler.get_circuit_breaker_stats()
+        for source_name, stats in raw_cb_stats.items():
+            circuit_breaker_stats[source_name] = CircuitBreakerStats(
+                state=stats["state"],
+                consecutive_failures=stats["consecutive_failures"],
+                total_failures=stats["total_failures"],
+                total_successes=stats["total_successes"],
+                seconds_until_retry=stats["seconds_until_retry"]
+            )
+
+    return CrawlerStats(
+        enabled=crawler_enabled,
+        queue_total=queue_stats["total_count"],
+        queue_pending=queue_stats["zero_attempts"],
+        queue_in_progress=queue_stats["in_progress"],
+        not_found_failures=queue_stats["not_found_failures"],
+        service_error_failures=queue_stats["service_error_failures"],
+        max_attempts_reached=queue_stats["max_attempts_reached"],
+        circuit_breakers=circuit_breaker_stats
     )

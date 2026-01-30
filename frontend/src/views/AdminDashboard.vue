@@ -29,17 +29,29 @@
       {{ error }}
     </div>
 
-    <div class="actions">
-      <router-link to="/" class="action-link">
-        <i class="bi bi-map"></i> View Live Radar
-      </router-link>
-      <router-link to="/flightlog" class="action-link">
-        <i class="bi bi-list-ul"></i> View Flight Log
-      </router-link>
-    </div>
-
-    <div class="editor-section">
-      <AircraftEditor />
+    <div class="tabs-container">
+      <div class="tabs-header">
+        <button
+          class="tab-button"
+          :class="{ active: activeTab === 'queue' }"
+          @click="activeTab = 'queue'"
+        >
+          <i class="bi bi-list-check"></i>
+          Queue Stats
+        </button>
+        <button
+          class="tab-button"
+          :class="{ active: activeTab === 'editor' }"
+          @click="activeTab = 'editor'"
+        >
+          <i class="bi bi-pencil-square"></i>
+          Aircraft Editor
+        </button>
+      </div>
+      <div class="tab-content">
+        <CrawlerStatus v-if="activeTab === 'queue'" />
+        <AircraftEditor v-if="activeTab === 'editor'" />
+      </div>
     </div>
   </div>
 </template>
@@ -51,6 +63,7 @@ import Axios from 'axios';
 import { config } from '@/config';
 import { getAuthService } from '@/services/authService';
 import AircraftEditor from '@/components/admin/AircraftEditor.vue';
+import CrawlerStatus from '@/components/admin/CrawlerStatus.vue';
 
 const router = useRouter();
 const authService = getAuthService();
@@ -59,6 +72,7 @@ const flightCount = ref(0);
 const loading = ref(true);
 const error = ref('');
 const loggingOut = ref(false);
+const activeTab = ref<'queue' | 'editor'>('queue');
 
 const fetchStats = async () => {
   loading.value = true;
@@ -230,36 +244,52 @@ onMounted(() => {
   font-size: 1.25rem;
 }
 
-.actions {
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
+.tabs-container {
+  margin-top: 32px;
 }
 
-.action-link {
+.tabs-header {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid #ddd;
+  margin-bottom: 0;
+}
+
+.tab-button {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 12px 20px;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  color: #333;
-  text-decoration: none;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #666;
   font-size: 0.9rem;
+  cursor: pointer;
   transition: all 0.15s ease;
+  margin-bottom: -1px;
 }
 
-.action-link:hover {
+.tab-button:hover {
+  color: #333;
   background: #f5f5f5;
-  border-color: #ccc;
 }
 
-.action-link i {
+.tab-button.active {
+  color: #333;
+  border-bottom-color: #333;
+  font-weight: 500;
+}
+
+.tab-button i {
   font-size: 1rem;
 }
 
-.editor-section {
-  margin-top: 32px;
+.tab-content {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+  padding: 24px;
 }
 </style>

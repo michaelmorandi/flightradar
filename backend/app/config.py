@@ -70,6 +70,16 @@ class Config:
     # Nighthawk proxy URL for aircraft metadata lookups (disabled if not set)
     NIGHTHAWK_PROXY_URL = None
 
+    # Crawler configuration
+    CRAWLER_MAX_ATTEMPTS = 5  # Max retry attempts for "not found" errors
+    CRAWLER_SERVICE_ERROR_RESET_HOURS = 6  # Reset service error attempts after N hours
+    CRAWLER_STALENESS_DAYS = 120  # Re-process aircraft older than this (days)
+    CRAWLER_INCOMPLETE_STALENESS_DAYS = 7  # Re-process incomplete aircraft after N days
+    CRAWLER_BATCH_SIZE = 50  # Number of aircraft to process per cycle
+    CRAWLER_RUN_INTERVAL_SEC = 20  # Seconds between crawler runs
+    CRAWLER_CIRCUIT_BREAKER_THRESHOLD = 5  # Consecutive failures before circuit opens
+    CRAWLER_CIRCUIT_BREAKER_RESET_SEC = 300  # Seconds before circuit breaker resets (5 min)
+
     # JWT Authentication configuration
     JWT_SECRET = None  # Required - must be set via environment variable
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 15  # Token lifetime in minutes
@@ -120,6 +130,14 @@ class Config:
         ENV_ADMIN_PASSWORD = 'ADMIN_PASSWORD'
         ENV_ALLOWED_ORIGINS = 'ALLOWED_ORIGINS'
         ENV_NIGHTHAWK_PROXY_URL = 'NIGHTHAWK_PROXY_URL'
+        ENV_CRAWLER_MAX_ATTEMPTS = 'CRAWLER_MAX_ATTEMPTS'
+        ENV_CRAWLER_SERVICE_ERROR_RESET_HOURS = 'CRAWLER_SERVICE_ERROR_RESET_HOURS'
+        ENV_CRAWLER_STALENESS_DAYS = 'CRAWLER_STALENESS_DAYS'
+        ENV_CRAWLER_INCOMPLETE_STALENESS_DAYS = 'CRAWLER_INCOMPLETE_STALENESS_DAYS'
+        ENV_CRAWLER_BATCH_SIZE = 'CRAWLER_BATCH_SIZE'
+        ENV_CRAWLER_RUN_INTERVAL_SEC = 'CRAWLER_RUN_INTERVAL_SEC'
+        ENV_CRAWLER_CIRCUIT_BREAKER_THRESHOLD = 'CRAWLER_CIRCUIT_BREAKER_THRESHOLD'
+        ENV_CRAWLER_CIRCUIT_BREAKER_RESET_SEC = 'CRAWLER_CIRCUIT_BREAKER_RESET_SEC'
 
         if os.environ.get(ENV_DATA_FOLDER):
             self.DATA_FOLDER = os.environ.get(ENV_DATA_FOLDER)
@@ -166,6 +184,49 @@ class Config:
             self.ALLOWED_ORIGINS = os.environ.get(ENV_ALLOWED_ORIGINS)
         if os.environ.get(ENV_NIGHTHAWK_PROXY_URL):
             self.NIGHTHAWK_PROXY_URL = self.sanitize_url(os.environ.get(ENV_NIGHTHAWK_PROXY_URL))
+
+        # Crawler configuration
+        if os.environ.get(ENV_CRAWLER_MAX_ATTEMPTS):
+            try:
+                self.CRAWLER_MAX_ATTEMPTS = int(os.environ.get(ENV_CRAWLER_MAX_ATTEMPTS))
+            except ValueError:
+                pass
+        if os.environ.get(ENV_CRAWLER_SERVICE_ERROR_RESET_HOURS):
+            try:
+                self.CRAWLER_SERVICE_ERROR_RESET_HOURS = int(os.environ.get(ENV_CRAWLER_SERVICE_ERROR_RESET_HOURS))
+            except ValueError:
+                pass
+        if os.environ.get(ENV_CRAWLER_STALENESS_DAYS):
+            try:
+                self.CRAWLER_STALENESS_DAYS = int(os.environ.get(ENV_CRAWLER_STALENESS_DAYS))
+            except ValueError:
+                pass
+        if os.environ.get(ENV_CRAWLER_INCOMPLETE_STALENESS_DAYS):
+            try:
+                self.CRAWLER_INCOMPLETE_STALENESS_DAYS = int(os.environ.get(ENV_CRAWLER_INCOMPLETE_STALENESS_DAYS))
+            except ValueError:
+                pass
+        if os.environ.get(ENV_CRAWLER_BATCH_SIZE):
+            try:
+                self.CRAWLER_BATCH_SIZE = int(os.environ.get(ENV_CRAWLER_BATCH_SIZE))
+            except ValueError:
+                pass
+        if os.environ.get(ENV_CRAWLER_RUN_INTERVAL_SEC):
+            try:
+                self.CRAWLER_RUN_INTERVAL_SEC = int(os.environ.get(ENV_CRAWLER_RUN_INTERVAL_SEC))
+            except ValueError:
+                pass
+        if os.environ.get(ENV_CRAWLER_CIRCUIT_BREAKER_THRESHOLD):
+            try:
+                self.CRAWLER_CIRCUIT_BREAKER_THRESHOLD = int(os.environ.get(ENV_CRAWLER_CIRCUIT_BREAKER_THRESHOLD))
+            except ValueError:
+                pass
+        if os.environ.get(ENV_CRAWLER_CIRCUIT_BREAKER_RESET_SEC):
+            try:
+                self.CRAWLER_CIRCUIT_BREAKER_RESET_SEC = int(os.environ.get(ENV_CRAWLER_CIRCUIT_BREAKER_RESET_SEC))
+            except ValueError:
+                pass
+
         self.config_src = ConfigSource.ENV
 
     def __str__(self):

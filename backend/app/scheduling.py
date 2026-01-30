@@ -12,7 +12,7 @@ from .sse.notifier import SSENotifier
 logger = logging.getLogger(__name__)
 
 UPDATER_JOB_NAME = 'flight_updater_job'
-CRAWLER_RUN_INTERVAL_SEC = 20
+DEFAULT_CRAWLER_RUN_INTERVAL_SEC = 20
 
 def create_updater(config, mongodb=None):
     updater = FlightUpdaterCoordinator()
@@ -80,12 +80,13 @@ def configure_scheduling(app: FastAPI, conf: Config):
         crawler = AirplaneCrawler(conf, app.state.mongodb)
         app.state.crawler = crawler
 
-        logger.info(f"Scheduling aircraft metadata crawler job (every {CRAWLER_RUN_INTERVAL_SEC} seconds)...")
+        crawler_interval = getattr(conf, 'CRAWLER_RUN_INTERVAL_SEC', DEFAULT_CRAWLER_RUN_INTERVAL_SEC)
+        logger.info(f"Scheduling aircraft metadata crawler job (every {crawler_interval} seconds)...")
         scheduler.add_job(
             id='airplane_crawler',
             func=lambda: app.state.crawler.crawl_sources(),
             trigger='interval',
-            seconds=CRAWLER_RUN_INTERVAL_SEC,
+            seconds=crawler_interval,
             misfire_grace_time=120,
             coalesce=True
         )

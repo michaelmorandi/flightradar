@@ -28,12 +28,18 @@ services:
       - MIL_ONLY=${MIL_ONLY}
       - DB_RETENTION_MIN=${DB_RETENTION_MIN}
       - UNKNOWN_AIRCRAFT_CRAWLING=${UNKNOWN_AIRCRAFT_CRAWLING}
+      - NIGHTHAWK_PROXY_URL=${NIGHTHAWK_PROXY_URL:-http://nighthawk-proxy:8000}
 
       # Authentication environment variables
       - JWT_SECRET=${JWT_SECRET}
       - CLIENT_SECRET=${CLIENT_SECRET}
       - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-15}
       - CHALLENGE_EXPIRE_SECONDS=${CHALLENGE_EXPIRE_SECONDS:-60}
+    restart: unless-stopped
+
+  nighthawk-proxy:
+    image: freemantp/nighthawk-proxy:latest
+    container_name: nighthawk-proxy
     restart: unless-stopped
 
   # Uncomment if you need MongoDB

@@ -16,15 +16,16 @@ def get_mongodb() -> Database:
 
 MongoDBDep = Annotated[Database, Depends(get_mongodb)]
 
+# Singleton config instance - loaded once at startup
+_config = Config()
+
 def get_config() -> Config:
-    """Get application configuration"""
-    from ..config import Config
-    return Config()
+    """Get application configuration (singleton)"""
+    return _config
 
 def get_modes_util() -> ModesUtil:
     """Get ModesUtil instance"""
-    from ..config import Config
-    return ModesUtil(get_config().DATA_FOLDER)
+    return ModesUtil(_config.DATA_FOLDER)
 
 def get_meta_info() -> MetaInformation:
     """Get MetaInformation instance"""
@@ -44,9 +45,7 @@ MetaInfoDep = Annotated[MetaInformation, Depends(get_meta_info)]
 AircraftRepositoryDep = Annotated[AircraftRepository, Depends(get_aircraft_repository)]
 MongoDBRepositoryDep = Annotated[MongoDBRepository, Depends(get_mongodb_repository)]
 
-
 # Create fastapi-users instance for dependency injection
-_config = Config()
 _fastapi_users = create_fastapi_users(_config.JWT_SECRET)
 
 # Use fastapi-users' built-in dependencies

@@ -11,24 +11,39 @@ class IncompleteAircraftManager:
     """
     Manages all aspects of incomplete/unknown aircraft processing:
     1. Aircraft not present in aircraft collection
-    2. Aircraft with lastModified date older than 4 months
-    3. Aircraft with missing critical fields (operator, type, registration)
+    2. Aircraft with lastModified date older than staleness threshold
+    3. Aircraft with missing critical fields - re-queued sooner than complete aircraft
     4. Repository initialization and configuration
     """
 
     def __init__(self, config, mongodb=None):
         """Initialize manager with database connections"""
         from ...data.repositories.aircraft_repository import AircraftRepository
-        
+
+        # Get staleness config from config object or use defaults
+        self.staleness_days = getattr(config, 'CRAWLER_STALENESS_DAYS', 120)
+        self.incomplete_staleness_days = getattr(config, 'CRAWLER_INCOMPLETE_STALENESS_DAYS', 7)
+        max_attempts = getattr(config, 'CRAWLER_MAX_ATTEMPTS', 5)
+        service_error_reset_hours = getattr(config, 'CRAWLER_SERVICE_ERROR_RESET_HOURS', 6)
+
         self.aircraft_repo = AircraftRepository(mongodb)
-        self.processing_aircraft_repo = AircraftProcessingRepository(mongodb)
+        self.processing_aircraft_repo = AircraftProcessingRepository(
+            mongodb,
+            max_attempts=max_attempts,
+            service_error_reset_hours=service_error_reset_hours
+        )
 
     @classmethod
-    def create_with_repositories(cls, aircraft_repo: AircraftRepository, processing_aircraft_repo: AircraftProcessingRepository):
+    def create_with_repositories(cls, aircraft_repo: AircraftRepository,
+                                  processing_aircraft_repo: AircraftProcessingRepository,
+                                  staleness_days: int = 120,
+                                  incomplete_staleness_days: int = 7):
         """Create manager with existing repositories (for testing)"""
         instance = cls.__new__(cls)
         instance.aircraft_repo = aircraft_repo
         instance.processing_aircraft_repo = processing_aircraft_repo
+        instance.staleness_days = staleness_days
+        instance.incomplete_staleness_days = incomplete_staleness_days
         return instance
 
     def schedule_aircraft_for_processing(self, icao24s: Set[str]) -> None:
@@ -59,14 +74,15 @@ class IncompleteAircraftManager:
 
     def _classify_unknown_aircraft(self, icao24s: Set[str]) -> List[str]:
         """
-        Classify aircraft as unknown based on staleness criteria.
+        Classify aircraft as unknown based on staleness and completeness criteria.
 
-        Aircraft are queued for processing only if:
+        Aircraft are queued for processing if:
         1. Aircraft not present in aircraft collection
-        2. Aircraft has lastModified date older than 4 months (120 days)
+        2. Aircraft has lastModified date older than staleness threshold (configurable)
+        3. Aircraft has incomplete data AND lastModified older than incomplete_staleness threshold
 
-        Note: Aircraft with incomplete data but recent lastModified are NOT re-queued.
-        This prevents retry loops when external sources return partial data.
+        This allows incomplete aircraft to be re-queued sooner than complete aircraft,
+        giving external services another chance to provide full data.
 
         Args:
             icao24s: Set of ICAO24 addresses to classify
@@ -75,7 +91,8 @@ class IncompleteAircraftManager:
             List of ICAO24 addresses that are classified as unknown
         """
         aircraft_to_process = []
-        four_months_ago = datetime.now() - timedelta(days=120)
+        staleness_threshold = datetime.now() - timedelta(days=self.staleness_days)
+        incomplete_staleness_threshold = datetime.now() - timedelta(days=self.incomplete_staleness_days)
 
         for icao24 in icao24s:
             try:
@@ -97,12 +114,20 @@ class IncompleteAircraftManager:
 
                 if aircraft_doc:
                     last_modified = aircraft_doc.get("lastModified")
+                    is_incomplete = self._has_missing_critical_fields(aircraft_doc)
 
-                    # Only re-queue if data is stale (older than 4 months)
-                    # Do NOT re-queue just because data is incomplete - this prevents
-                    # retry loops when external sources consistently return partial data
-                    if last_modified is None or last_modified < four_months_ago:
-                        logger.debug(f"Aircraft {icao24} is stale (lastModified: {last_modified})")
+                    # Check staleness based on completeness
+                    if last_modified is None:
+                        # No timestamp - always re-queue
+                        logger.debug(f"Aircraft {icao24} has no lastModified, queuing")
+                        aircraft_to_process.append(icao24)
+                    elif is_incomplete and last_modified < incomplete_staleness_threshold:
+                        # Incomplete data - use shorter staleness threshold
+                        logger.debug(f"Aircraft {icao24} is incomplete and stale ({self.incomplete_staleness_days}d), queuing")
+                        aircraft_to_process.append(icao24)
+                    elif last_modified < staleness_threshold:
+                        # Complete data but old - use longer staleness threshold
+                        logger.debug(f"Aircraft {icao24} is stale ({self.staleness_days}d), queuing")
                         aircraft_to_process.append(icao24)
                     else:
                         logger.debug(f"Aircraft {icao24} was recently updated, skipping")
