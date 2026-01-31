@@ -37,7 +37,7 @@
           @click="activeTab = 'queue'"
         >
           <i class="bi bi-list-check"></i>
-          Queue Stats
+          Crawler Stats
         </button>
         <button
           class="tab-button"

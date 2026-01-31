@@ -8,7 +8,7 @@ class Aircraft:
         if not modeShex:
             raise ValueError("Empty hex code not allowed")
 
-        self.modes_hex = modeShex.strip()
+        self.modes_hex = modeShex.strip().upper()
         self.reg = reg.strip() if reg else None
         self.icao_type_code = icao_type_code.strip() if icao_type_code else None
         self.aircraft_type_description = aircraft_type_description.strip() if aircraft_type_description else None

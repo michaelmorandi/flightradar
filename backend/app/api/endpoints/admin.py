@@ -35,6 +35,8 @@ class CircuitBreakerStats(BaseModel):
     consecutive_failures: int
     total_failures: int
     total_successes: int
+    trip_count: int
+    current_backoff_seconds: int
     seconds_until_retry: float
 
 
@@ -48,6 +50,21 @@ class CrawlerStats(BaseModel):
     service_error_failures: int
     max_attempts_reached: int
     circuit_breakers: dict[str, CircuitBreakerStats]
+
+
+class CrawlerActivityItem(BaseModel):
+    """A single crawler activity entry."""
+    icao24: str
+    timestamp: str
+    status: str  # 'success', 'partial', 'not_found', 'service_error'
+    source: Optional[str] = None
+    registration: Optional[str] = None
+    aircraft_type: Optional[str] = None
+
+
+class CrawlerActivityResponse(BaseModel):
+    """Response containing recent crawler activity."""
+    activity: list[CrawlerActivityItem]
 
 
 class UserInfo(BaseModel):
@@ -282,6 +299,8 @@ async def get_crawler_stats(
                 consecutive_failures=stats["consecutive_failures"],
                 total_failures=stats["total_failures"],
                 total_successes=stats["total_successes"],
+                trip_count=stats["trip_count"],
+                current_backoff_seconds=stats["current_backoff_seconds"],
                 seconds_until_retry=stats["seconds_until_retry"]
             )
 
@@ -295,3 +314,22 @@ async def get_crawler_stats(
         max_attempts_reached=queue_stats["max_attempts_reached"],
         circuit_breakers=circuit_breaker_stats
     )
+
+
+@router.get('/admin/crawler/activity', response_model=CrawlerActivityResponse, tags=["admin"])
+async def get_crawler_activity(
+    request: Request,
+    current_user: AdminUserDep,
+) -> CrawlerActivityResponse:
+    """
+    Get recent crawler activity.
+
+    Returns a list of recent aircraft fetch attempts with their status and source.
+    Used by the admin dashboard for monitoring crawler activity in real-time.
+    """
+    activity = []
+    if hasattr(request.app.state, 'crawler') and request.app.state.crawler:
+        raw_activity = request.app.state.crawler.get_recent_activity(limit=20)
+        activity = [CrawlerActivityItem(**item) for item in raw_activity]
+
+    return CrawlerActivityResponse(activity=activity)

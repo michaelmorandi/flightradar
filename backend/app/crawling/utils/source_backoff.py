@@ -48,19 +48,32 @@ class CircuitBreaker:
     Prevents hammering failing services by tracking consecutive failures
     and temporarily blocking requests when a threshold is reached.
 
+    Uses exponential backoff: each time the circuit trips, the reset time
+    doubles (starting from base_reset_seconds, capped at max_reset_seconds).
+
     States:
     - CLOSED: Normal operation, requests allowed
-    - OPEN: Service failing, requests blocked until reset_seconds elapsed
+    - OPEN: Service failing, requests blocked until backoff elapsed
     - HALF_OPEN: Testing if service recovered (one request allowed)
     """
-    failure_threshold: int = 5  # Failures before opening circuit
-    reset_seconds: int = 300    # Time before attempting recovery (5 min)
+    failure_threshold: int = 5      # Failures before opening circuit
+    base_reset_seconds: int = 60    # Initial backoff time (1 min)
+    max_reset_seconds: int = 1800   # Maximum backoff time (30 min)
 
     consecutive_failures: int = field(default=0, init=False)
     last_failure_time: float = field(default=0.0, init=False)
     state: CircuitState = field(default=CircuitState.CLOSED, init=False)
     total_failures: int = field(default=0, init=False)
     total_successes: int = field(default=0, init=False)
+    trip_count: int = field(default=0, init=False)  # Number of times circuit has opened
+
+    def _get_current_reset_seconds(self) -> int:
+        """Calculate current reset time with exponential backoff"""
+        if self.trip_count == 0:
+            return self.base_reset_seconds
+        # Exponential backoff: base * 2^(trip_count-1), capped at max
+        backoff = self.base_reset_seconds * (2 ** (self.trip_count - 1))
+        return min(backoff, self.max_reset_seconds)
 
     def is_available(self) -> bool:
         """Check if requests should be allowed through"""
@@ -68,10 +81,11 @@ class CircuitBreaker:
             return True
 
         if self.state == CircuitState.OPEN:
-            # Check if enough time has passed to try again
-            if time.time() - self.last_failure_time >= self.reset_seconds:
+            # Check if enough time has passed to try again (with exponential backoff)
+            reset_seconds = self._get_current_reset_seconds()
+            if time.time() - self.last_failure_time >= reset_seconds:
                 self.state = CircuitState.HALF_OPEN
-                logger.info("Circuit breaker entering HALF_OPEN state, testing service")
+                logger.info(f"Circuit breaker entering HALF_OPEN state after {reset_seconds}s backoff, testing service")
                 return True
             return False
 
@@ -82,7 +96,8 @@ class CircuitBreaker:
         """Record a successful request"""
         self.total_successes += 1
         if self.state == CircuitState.HALF_OPEN:
-            logger.info("Circuit breaker closing after successful test")
+            logger.info("Circuit breaker closing after successful test, resetting backoff")
+            self.trip_count = 0  # Reset exponential backoff on successful recovery
         self.state = CircuitState.CLOSED
         self.consecutive_failures = 0
 
@@ -93,24 +108,32 @@ class CircuitBreaker:
         self.last_failure_time = time.time()
 
         if self.state == CircuitState.HALF_OPEN:
-            # Failed during test, reopen circuit
+            # Failed during test, reopen circuit with increased backoff
+            self.trip_count += 1
             self.state = CircuitState.OPEN
-            logger.warning("Circuit breaker reopening after failed test")
+            reset_seconds = self._get_current_reset_seconds()
+            logger.warning(f"Circuit breaker reopening after failed test, backoff now {reset_seconds}s (trip #{self.trip_count})")
         elif self.consecutive_failures >= self.failure_threshold:
             if self.state != CircuitState.OPEN:
+                self.trip_count += 1
+                reset_seconds = self._get_current_reset_seconds()
                 logger.warning(
-                    f"Circuit breaker opening after {self.consecutive_failures} consecutive failures"
+                    f"Circuit breaker opening after {self.consecutive_failures} consecutive failures, "
+                    f"backoff {reset_seconds}s (trip #{self.trip_count})"
                 )
             self.state = CircuitState.OPEN
 
     def get_stats(self) -> dict:
         """Get circuit breaker statistics"""
+        reset_seconds = self._get_current_reset_seconds()
         return {
             "state": self.state.value,
             "consecutive_failures": self.consecutive_failures,
             "total_failures": self.total_failures,
             "total_successes": self.total_successes,
-            "seconds_until_retry": max(0, self.reset_seconds - (time.time() - self.last_failure_time))
+            "trip_count": self.trip_count,
+            "current_backoff_seconds": reset_seconds,
+            "seconds_until_retry": max(0, reset_seconds - (time.time() - self.last_failure_time))
             if self.state == CircuitState.OPEN else 0
         }
 
@@ -123,9 +146,15 @@ class CircuitBreakerRegistry:
     failures independently.
     """
 
-    def __init__(self, failure_threshold: int = 5, reset_seconds: int = 300):
+    def __init__(
+        self,
+        failure_threshold: int = 5,
+        base_reset_seconds: int = 60,
+        max_reset_seconds: int = 1800
+    ):
         self.failure_threshold = failure_threshold
-        self.reset_seconds = reset_seconds
+        self.base_reset_seconds = base_reset_seconds
+        self.max_reset_seconds = max_reset_seconds
         self._breakers: Dict[str, CircuitBreaker] = {}
 
     def get_breaker(self, source_name: str) -> CircuitBreaker:
@@ -133,7 +162,8 @@ class CircuitBreakerRegistry:
         if source_name not in self._breakers:
             self._breakers[source_name] = CircuitBreaker(
                 failure_threshold=self.failure_threshold,
-                reset_seconds=self.reset_seconds
+                base_reset_seconds=self.base_reset_seconds,
+                max_reset_seconds=self.max_reset_seconds
             )
         return self._breakers[source_name]
 

@@ -2,7 +2,7 @@ from ..data.sources.metadata_sources.openskynet import OpenskyNet
 from ..data.sources.metadata_sources.hexdb_io import HexdbIo
 from ..data.sources.metadata_sources import AircraftMetadataSource
 from ..data.sources.metadata_sources.query_result import QueryResult, QueryStatus
-from ..data.sources.radar_services.nighthawk_proxy import NighthawkProxy
+from ..data.sources.radar_services.nighthawk_sources import get_nighthawk_sources
 from ..core.models.aircraft import Aircraft
 from ..data.repositories.aircraft_repository import AircraftRepository
 from ..data.repositories.aircraft_processing_repository import AircraftProcessingRepository
@@ -10,10 +10,26 @@ from ..core.utils.logging import init_logging
 from .utils.source_backoff import CircuitBreakerRegistry
 
 import logging
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
+from datetime import datetime
 from typing import List, Optional
 
 logger = logging.getLogger("Crawler")
+
+# Maximum number of activity entries to keep
+MAX_ACTIVITY_ENTRIES = 50
+
+
+@dataclass
+class CrawlActivity:
+    """Record of a single aircraft fetch attempt"""
+    icao24: str
+    timestamp: datetime
+    status: str  # 'success', 'partial', 'not_found', 'service_error'
+    source: Optional[str] = None
+    registration: Optional[str] = None
+    aircraft_type: Optional[str] = None
 
 
 @dataclass
@@ -36,7 +52,8 @@ class AirplaneCrawler:
         service_error_reset_hours = getattr(config, 'CRAWLER_SERVICE_ERROR_RESET_HOURS', 6)
         self.batch_size = getattr(config, 'CRAWLER_BATCH_SIZE', 50)
         circuit_breaker_threshold = getattr(config, 'CRAWLER_CIRCUIT_BREAKER_THRESHOLD', 5)
-        circuit_breaker_reset_sec = getattr(config, 'CRAWLER_CIRCUIT_BREAKER_RESET_SEC', 300)
+        circuit_breaker_base_reset_sec = getattr(config, 'CRAWLER_CIRCUIT_BREAKER_BASE_RESET_SEC', 60)
+        circuit_breaker_max_reset_sec = getattr(config, 'CRAWLER_CIRCUIT_BREAKER_MAX_RESET_SEC', 1800)
 
         self.aircraft_repo = AircraftRepository(mongodb)
         self.processing_repo = AircraftProcessingRepository(
@@ -45,10 +62,11 @@ class AirplaneCrawler:
             service_error_reset_hours=service_error_reset_hours
         )
 
-        # Circuit breaker registry for all sources
+        # Circuit breaker registry for all sources (with exponential backoff)
         self.circuit_breakers = CircuitBreakerRegistry(
             failure_threshold=circuit_breaker_threshold,
-            reset_seconds=circuit_breaker_reset_sec
+            base_reset_seconds=circuit_breaker_base_reset_sec,
+            max_reset_seconds=circuit_breaker_max_reset_sec
         )
 
         self.sources: List[AircraftMetadataSource] = [
@@ -56,8 +74,14 @@ class AirplaneCrawler:
             OpenskyNet(),
         ]
 
+        # Add nighthawk sources if configured (discovered from proxy, sorted by priority)
         if config.NIGHTHAWK_PROXY_URL:
-            self.sources.append(NighthawkProxy(base_url=config.NIGHTHAWK_PROXY_URL))
+            nighthawk_sources = get_nighthawk_sources(base_url=config.NIGHTHAWK_PROXY_URL)
+            self.sources.extend(nighthawk_sources)
+            logger.info(f"Added {len(nighthawk_sources)} nighthawk sources: {[s.name() for s in nighthawk_sources]}")
+
+        # Activity tracking for admin dashboard
+        self._activity_log: deque[CrawlActivity] = deque(maxlen=MAX_ACTIVITY_ENTRIES)
 
     def _query_aircraft_metadata(self, icao24: str) -> CrawlResult:
         """
@@ -183,22 +207,28 @@ class AirplaneCrawler:
                         # Found data (complete or partial) - save it
                         if self.aircraft_repo.insert_aircraft(crawl_result.aircraft):
                             self.processing_repo.remove_aircraft(icao24)
+                            status = 'success' if crawl_result.aircraft.is_complete_with_operator() else 'partial'
+                            self._record_activity(icao24, status, crawl_result.aircraft)
                             logger.info(f"Successfully processed aircraft: {icao24}")
                         else:
                             # Database error - treat as service error (retry later)
                             logger.warning(f"Failed to insert aircraft {icao24} to database")
                             self.processing_repo.record_service_error(icao24, "Database insert failed")
+                            self._record_activity(icao24, 'service_error')
                     elif crawl_result.had_service_error:
                         # Service error occurred - don't increment attempts, just record for retry
                         self.processing_repo.record_service_error(icao24, crawl_result.error_message)
+                        self._record_activity(icao24, 'service_error')
                         logger.debug(f"Service error for {icao24}, will retry after cooldown")
                     elif crawl_result.all_not_found:
                         # Aircraft not found in any source - increment "not found" attempts
                         self.processing_repo.record_not_found(icao24)
+                        self._record_activity(icao24, 'not_found')
                         logger.debug(f"Aircraft {icao24} not found in any source, incremented attempts")
                     else:
                         # Unexpected state - treat as service error to be safe
                         self.processing_repo.record_service_error(icao24, "Unknown crawl state")
+                        self._record_activity(icao24, 'service_error')
                         logger.warning(f"Unexpected crawl state for {icao24}")
 
                 except Exception as e:
@@ -211,3 +241,30 @@ class AirplaneCrawler:
     def get_circuit_breaker_stats(self) -> dict:
         """Get statistics for all circuit breakers"""
         return self.circuit_breakers.get_all_stats()
+
+    def _record_activity(self, icao24: str, status: str, aircraft: Optional[Aircraft] = None) -> None:
+        """Record a crawl activity for the admin dashboard"""
+        activity = CrawlActivity(
+            icao24=icao24,
+            timestamp=datetime.utcnow(),
+            status=status,
+            source=aircraft.source if aircraft else None,
+            registration=aircraft.reg if aircraft else None,
+            aircraft_type=aircraft.icao_type_code if aircraft else None,
+        )
+        self._activity_log.appendleft(activity)
+
+    def get_recent_activity(self, limit: int = 20) -> List[dict]:
+        """Get recent crawl activity for the admin dashboard"""
+        activities = list(self._activity_log)[:limit]
+        return [
+            {
+                'icao24': a.icao24,
+                'timestamp': a.timestamp.isoformat(),
+                'status': a.status,
+                'source': a.source,
+                'registration': a.registration,
+                'aircraft_type': a.aircraft_type,
+            }
+            for a in activities
+        ]

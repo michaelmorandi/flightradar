@@ -147,7 +147,15 @@ class AircraftRepository:
                 return result.acknowledged
                 
             except DuplicateKeyError:
-                return self.update_aircraft(acrft)
+                # Aircraft already exists - always update lastModified to prevent
+                # re-queuing, even if we have no new data to add
+                self.db[self.collection_name].update_one(
+                    {"modeS": acrft.modes_hex},
+                    {"$set": {"lastModified": datetime.now()}}
+                )
+                # Also try to update with any additional data we have
+                self.update_aircraft(acrft)
+                return True
             except PyMongoError as e:
                 logger.exception(e)
                 logger.error(f'Could not insert aircraft: {str(acrft)}')

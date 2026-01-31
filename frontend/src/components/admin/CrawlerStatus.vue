@@ -111,10 +111,45 @@
                 <span class="cb-stat-value consecutive">{{ cb.consecutive_failures }}</span>
                 <span class="cb-stat-label">Consecutive</span>
               </div>
+              <div class="cb-stat" v-if="cb.trip_count > 0">
+                <span class="cb-stat-value trips">{{ cb.trip_count }}</span>
+                <span class="cb-stat-label">Trips</span>
+              </div>
             </div>
             <div v-if="cb.state === 'open' && cb.seconds_until_retry > 0" class="cb-retry-timer">
               <i class="bi bi-hourglass-split"></i>
               Retry in {{ Math.ceil(cb.seconds_until_retry) }}s
+              <span class="cb-backoff-info">(backoff: {{ formatBackoff(cb.current_backoff_seconds) }})</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Activity -->
+      <div class="stats-section">
+        <h3 class="subsection-title">Recent Activity</h3>
+        <div v-if="activity.length === 0" class="no-data">
+          <i class="bi bi-info-circle"></i>
+          No recent activity
+        </div>
+        <div v-else class="activity-list">
+          <div
+            v-for="(item, index) in activity"
+            :key="index"
+            class="activity-item"
+            :class="item.status"
+          >
+            <div class="activity-time">{{ formatTime(item.timestamp) }}</div>
+            <div class="activity-icao">{{ item.icao24 }}</div>
+            <div class="activity-status">
+              <span class="status-badge" :class="item.status">
+                {{ getStatusLabel(item.status) }}
+              </span>
+            </div>
+            <div class="activity-details">
+              <span v-if="item.registration" class="detail-reg">{{ item.registration }}</span>
+              <span v-if="item.aircraft_type" class="detail-type">{{ item.aircraft_type }}</span>
+              <span v-if="item.source" class="detail-source">{{ item.source }}</span>
             </div>
           </div>
         </div>
@@ -133,6 +168,8 @@ interface CircuitBreakerStats {
   consecutive_failures: number;
   total_failures: number;
   total_successes: number;
+  trip_count: number;
+  current_backoff_seconds: number;
   seconds_until_retry: number;
 }
 
@@ -145,6 +182,15 @@ interface CrawlerStats {
   service_error_failures: number;
   max_attempts_reached: number;
   circuit_breakers: Record<string, CircuitBreakerStats>;
+}
+
+interface ActivityItem {
+  icao24: string;
+  timestamp: string;
+  status: 'success' | 'partial' | 'not_found' | 'service_error';
+  source: string | null;
+  registration: string | null;
+  aircraft_type: string | null;
 }
 
 const refreshInterval = 5000; // 5 seconds
@@ -160,6 +206,7 @@ const stats = ref<CrawlerStats>({
   circuit_breakers: {},
 });
 
+const activity = ref<ActivityItem[]>([]);
 const loading = ref(false);
 const error = ref('');
 let intervalId: number | null = null;
@@ -169,13 +216,22 @@ const fetchStats = async () => {
   error.value = '';
 
   try {
-    const response = await Axios.get<CrawlerStats>(
-      `${config.flightApiUrl}/admin/crawler/stats`,
-      { withCredentials: true }
-    );
+    const [statsResponse, activityResponse] = await Promise.all([
+      Axios.get<CrawlerStats>(
+        `${config.flightApiUrl}/admin/crawler/stats`,
+        { withCredentials: true }
+      ),
+      Axios.get<{ activity: ActivityItem[] }>(
+        `${config.flightApiUrl}/admin/crawler/activity`,
+        { withCredentials: true }
+      ),
+    ]);
 
-    if (response.status >= 200 && response.status < 300) {
-      stats.value = response.data;
+    if (statsResponse.status >= 200 && statsResponse.status < 300) {
+      stats.value = statsResponse.data;
+    }
+    if (activityResponse.status >= 200 && activityResponse.status < 300) {
+      activity.value = activityResponse.data.activity;
     }
   } catch (err: any) {
     if (err.response?.status === 403) {
@@ -189,15 +245,64 @@ const fetchStats = async () => {
   }
 };
 
+const formatTime = (isoString: string) => {
+  try {
+    const date = new Date(isoString);
+    return date.toLocaleTimeString();
+  } catch {
+    return isoString;
+  }
+};
+
+const getStatusLabel = (status: string) => {
+  switch (status) {
+    case 'success': return 'Found';
+    case 'partial': return 'Partial';
+    case 'not_found': return 'Not Found';
+    case 'service_error': return 'Error';
+    default: return status;
+  }
+};
+
+const formatBackoff = (seconds: number) => {
+  if (seconds >= 60) {
+    const mins = Math.floor(seconds / 60);
+    return `${mins}m`;
+  }
+  return `${seconds}s`;
+};
+
+const startPolling = () => {
+  if (intervalId === null) {
+    intervalId = window.setInterval(fetchStats, refreshInterval);
+  }
+};
+
+const stopPolling = () => {
+  if (intervalId !== null) {
+    clearInterval(intervalId);
+    intervalId = null;
+  }
+};
+
+const handleVisibilityChange = () => {
+  if (document.hidden) {
+    stopPolling();
+  } else {
+    fetchStats();
+    startPolling();
+  }
+};
+
 onMounted(() => {
   fetchStats();
-  intervalId = window.setInterval(fetchStats, refreshInterval);
+  startPolling();
+  document.addEventListener('visibilitychange', handleVisibilityChange);
 });
 
 onUnmounted(() => {
-  if (intervalId !== null) {
-    clearInterval(intervalId);
-  }
+  stopPolling();
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
 });
 </script>
 
@@ -501,6 +606,10 @@ onUnmounted(() => {
   color: #ff9800;
 }
 
+.cb-stat-value.trips {
+  color: #9c27b0;
+}
+
 .cb-stat-label {
   font-size: 0.7rem;
   color: #888;
@@ -518,6 +627,108 @@ onUnmounted(() => {
   gap: 8px;
 }
 
+.cb-backoff-info {
+  color: #888;
+  font-size: 0.75rem;
+}
+
+/* Activity List */
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.activity-item {
+  display: grid;
+  grid-template-columns: 80px 80px 90px 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  border-left: 3px solid #4caf50;
+}
+
+.activity-item.partial {
+  border-left-color: #ff9800;
+}
+
+.activity-item.not_found {
+  border-left-color: #9e9e9e;
+}
+
+.activity-item.service_error {
+  border-left-color: #f44336;
+}
+
+.activity-time {
+  color: #888;
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.activity-icao {
+  font-family: monospace;
+  font-weight: 600;
+  color: #333;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.status-badge.success {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.status-badge.partial {
+  background: #fff3e0;
+  color: #ef6c00;
+}
+
+.status-badge.not_found {
+  background: #f5f5f5;
+  color: #757575;
+}
+
+.status-badge.service_error {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.activity-details {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.detail-reg {
+  font-weight: 500;
+  color: #333;
+}
+
+.detail-type {
+  color: #666;
+}
+
+.detail-source {
+  color: #1976d2;
+  font-size: 0.75rem;
+  background: #e3f2fd;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
 /* Responsive */
 @media (max-width: 600px) {
   .queue-stats-grid {
@@ -528,6 +739,15 @@ onUnmounted(() => {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
+  }
+
+  .activity-item {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+  }
+
+  .activity-details {
+    grid-column: 1 / -1;
   }
 }
 </style>
