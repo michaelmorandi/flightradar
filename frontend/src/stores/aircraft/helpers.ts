@@ -12,7 +12,7 @@ import type {
   RawPositionData,
   HistoryPosition,
 } from './types';
-import { mapProtobufCategoryToIcon, type AircraftCategory } from '@/utils/aircraftIcons';
+import { mapProtobufCategoryToIcon, determineAircraftCategory, type AircraftCategory } from '@/utils/aircraftIcons';
 
 /**
  * Create a new AircraftState from an initial position update.
@@ -172,15 +172,40 @@ export function calculateHeading(
 }
 
 /**
- * Map ADS-B category to icon category.
+ * Map ADS-B category to icon category with fallback to ICAO type.
+ *
+ * Priority:
+ * 1. gRPC ADS-B category (if valid - not 0/UNKNOWN or 1/NO_INFO)
+ * 2. ICAO type designator from aircraft database (fallback)
+ * 3. Aircraft type description from database (fallback)
+ * 4. Default icon
  */
-export function mapCategoryToIcon(category?: number): AircraftCategory {
-  return mapProtobufCategoryToIcon(category);
+export function mapCategoryToIcon(
+  category?: number,
+  icaoType?: string,
+  aircraftType?: string
+): AircraftCategory {
+  // First try gRPC category (values > 1 are valid categories)
+  if (category !== undefined && category > 1) {
+    return mapProtobufCategoryToIcon(category);
+  }
+
+  // Fallback to ICAO type or aircraft type from database
+  if (icaoType || aircraftType) {
+    return determineAircraftCategory(aircraftType, icaoType);
+  }
+
+  return 'default';
 }
 
 /**
  * Convert AircraftState to MapAircraftView for rendering.
  * Returns null if the aircraft cannot be displayed (e.g., no valid heading).
+ *
+ * Icon category is determined with priority:
+ * 1. gRPC ADS-B category (if valid)
+ * 2. ICAO type designator from aircraft database
+ * 3. Default icon
  */
 export function toMapView(aircraft: AircraftState): MapAircraftView | null {
   const heading = resolveHeading(aircraft);
@@ -195,7 +220,7 @@ export function toMapView(aircraft: AircraftState): MapAircraftView | null {
     lat: aircraft.lat,
     lng: aircraft.lon, // HERE Maps uses 'lng'
     heading,
-    iconCategory: mapCategoryToIcon(aircraft.category),
+    iconCategory: mapCategoryToIcon(aircraft.category, aircraft.icaoType, aircraft.aircraftType),
     callsign: aircraft.callsign,
     groundSpeed: aircraft.groundSpeed,
     category: aircraft.category,
