@@ -8,7 +8,7 @@ Each log entry contains the ICAO24 address, timestamp, and query results from ea
 from datetime import datetime
 from typing import List, Optional, Any
 from pymongo.database import Database
-from pymongo.errors import PyMongoError
+from pymongo.errors import PyMongoError, OperationFailure
 import logging
 
 logger = logging.getLogger(__name__)
@@ -31,10 +31,16 @@ class CrawlerLogRepository:
         collection = self.db[self.COLLECTION_NAME]
         # Index for querying by icao24
         collection.create_index("icao24")
-        # Index for querying by timestamp (for cleanup/pagination)
-        collection.create_index("timestamp")
         # TTL index to auto-expire old logs after 30 days
-        collection.create_index("timestamp", expireAfterSeconds=30 * 24 * 60 * 60)
+        try:
+            collection.create_index("timestamp", expireAfterSeconds=30 * 24 * 60 * 60)
+        except OperationFailure as e:
+            if e.code == 85:  # IndexOptionsConflict
+                # Drop existing index and recreate with TTL
+                collection.drop_index("timestamp_1")
+                collection.create_index("timestamp", expireAfterSeconds=30 * 24 * 60 * 60)
+            else:
+                raise
 
     def save_query_log(
         self,
