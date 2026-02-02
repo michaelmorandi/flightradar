@@ -96,9 +96,9 @@ class OpenskyNet(AircraftMetadataSource):
 
             if aircraft:
                 if aircraft.is_complete_with_operator():
-                    return QueryResult.success(aircraft)
+                    return QueryResult.success(aircraft, raw_payload=aircraft_data)
                 else:
-                    return QueryResult.partial(aircraft)
+                    return QueryResult.partial(aircraft, raw_payload=aircraft_data)
 
             # Empty response - treat as not found
             return QueryResult.not_found()

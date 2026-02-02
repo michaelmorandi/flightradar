@@ -6,14 +6,16 @@ from ..data.sources.radar_services.nighthawk_sources import get_nighthawk_source
 from ..core.models.aircraft import Aircraft
 from ..data.repositories.aircraft_repository import AircraftRepository
 from ..data.repositories.aircraft_processing_repository import AircraftProcessingRepository
+from ..data.repositories.crawler_log_repository import CrawlerLogRepository
 from ..core.utils.logging import init_logging
 from .utils.source_backoff import CircuitBreakerRegistry
 
 import logging
+import time
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Any
 
 logger = logging.getLogger("Crawler")
 
@@ -40,12 +42,23 @@ class SourceInfo:
 
 
 @dataclass
+class SourceQueryLog:
+    """Log entry for a single source query"""
+    source: str
+    status: str
+    duration_ms: int
+    payload: Optional[dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+@dataclass
 class CrawlResult:
     """Result of crawling metadata sources for a single aircraft"""
     aircraft: Optional[Aircraft] = None
     had_service_error: bool = False  # True if any source had a service error
     all_not_found: bool = True  # True if all sources returned not found
     error_message: Optional[str] = None
+    query_logs: List[SourceQueryLog] = field(default_factory=list)  # Log of all source queries
 
 
 class AirplaneCrawler:
@@ -68,6 +81,7 @@ class AirplaneCrawler:
             max_attempts=max_attempts,
             service_error_reset_hours=service_error_reset_hours
         )
+        self.log_repo = CrawlerLogRepository(mongodb)
 
         # Circuit breaker registry for all sources (with exponential backoff)
         self.circuit_breakers = CircuitBreakerRegistry(
@@ -110,6 +124,7 @@ class AirplaneCrawler:
         sources_used: List[str] = []
         had_service_error = False
         all_not_found = True
+        query_logs: List[SourceQueryLog] = []
 
         for source in self.sources:
             if not source.accept(icao24):
@@ -127,10 +142,27 @@ class AirplaneCrawler:
                 logger.debug(f'Skipping {source_name} - circuit breaker open')
                 had_service_error = True  # Treat as potential service error
                 all_not_found = False
+                query_logs.append(SourceQueryLog(
+                    source=source_name,
+                    status='skipped_circuit_breaker',
+                    duration_ms=0,
+                ))
                 continue
 
             try:
+                start_time = time.time()
                 result = source.query_aircraft_with_status(icao24)
+                duration_ms = int((time.time() - start_time) * 1000)
+
+                # Create query log entry
+                query_log = SourceQueryLog(
+                    source=source_name,
+                    status=result.status.value,
+                    duration_ms=duration_ms,
+                    payload=result.raw_payload,
+                    error=result.error_message,
+                )
+                query_logs.append(query_log)
 
                 if result.status == QueryStatus.SERVICE_ERROR:
                     # Service error - record failure and continue to next source
@@ -155,7 +187,12 @@ class AirplaneCrawler:
                     if aircraft.is_complete_with_operator():
                         # Found complete data, return immediately
                         logger.info(f'Found complete data for {icao24} from {source_name}')
-                        return CrawlResult(aircraft=aircraft, had_service_error=had_service_error, all_not_found=False)
+                        return CrawlResult(
+                            aircraft=aircraft,
+                            had_service_error=had_service_error,
+                            all_not_found=False,
+                            query_logs=query_logs
+                        )
 
                     # Partial data - merge with best result so far
                     if best_result is None:
@@ -171,13 +208,24 @@ class AirplaneCrawler:
                         if best_result.is_complete_with_operator():
                             best_result.source = '+'.join(sources_used)
                             logger.info(f'Merged complete data for {icao24} from {best_result.source}')
-                            return CrawlResult(aircraft=best_result, had_service_error=had_service_error, all_not_found=False)
+                            return CrawlResult(
+                                aircraft=best_result,
+                                had_service_error=had_service_error,
+                                all_not_found=False,
+                                query_logs=query_logs
+                            )
 
             except Exception as e:
                 logger.warning(f'Unexpected error from {source_name} for {icao24}: {e}')
                 self.circuit_breakers.record_failure(source_name)
                 had_service_error = True
                 all_not_found = False
+                query_logs.append(SourceQueryLog(
+                    source=source_name,
+                    status='exception',
+                    duration_ms=0,
+                    error=str(e),
+                ))
 
         # Return best partial result (may still be incomplete)
         if best_result and len(sources_used) > 1:
@@ -189,7 +237,8 @@ class AirplaneCrawler:
         return CrawlResult(
             aircraft=best_result,
             had_service_error=had_service_error,
-            all_not_found=all_not_found and best_result is None
+            all_not_found=all_not_found and best_result is None,
+            query_logs=query_logs
         )
 
     def crawl_sources(self) -> None:
@@ -230,21 +279,29 @@ class AirplaneCrawler:
                             logger.warning(f"Failed to insert aircraft {icao24} to database")
                             self.processing_repo.record_service_error(icao24, "Database insert failed")
                             self._record_activity(icao24, 'service_error')
+                            status = 'service_error'
                     elif crawl_result.had_service_error:
                         # Service error occurred - don't increment attempts, just record for retry
                         self.processing_repo.record_service_error(icao24, crawl_result.error_message)
                         self._record_activity(icao24, 'service_error')
                         logger.debug(f"Service error for {icao24}, will retry after cooldown")
+                        status = 'service_error'
                     elif crawl_result.all_not_found:
                         # Aircraft not found in any source - increment "not found" attempts
                         self.processing_repo.record_not_found(icao24)
                         self._record_activity(icao24, 'not_found')
                         logger.debug(f"Aircraft {icao24} not found in any source, incremented attempts")
+                        status = 'not_found'
                     else:
                         # Unexpected state - treat as service error to be safe
                         self.processing_repo.record_service_error(icao24, "Unknown crawl state")
                         self._record_activity(icao24, 'service_error')
                         logger.warning(f"Unexpected crawl state for {icao24}")
+                        status = 'service_error'
+
+                    # Save query log if multiple sources were queried
+                    if len(crawl_result.query_logs) >= 2:
+                        self._save_query_log(icao24, crawl_result, status)
 
                 except Exception as e:
                     logger.warning(f"Error processing aircraft {icao24}: {e}")
@@ -268,6 +325,32 @@ class AirplaneCrawler:
             aircraft_type=aircraft.icao_type_code if aircraft else None,
         )
         self._activity_log.appendleft(activity)
+
+    def _save_query_log(self, icao24: str, crawl_result: CrawlResult, final_status: str) -> None:
+        """Save query log to MongoDB for multi-source queries"""
+        try:
+            queries = [
+                {
+                    'source': log.source,
+                    'status': log.status,
+                    'duration_ms': log.duration_ms,
+                    'payload': log.payload,
+                    'error': log.error,
+                }
+                for log in crawl_result.query_logs
+            ]
+
+            final_source = crawl_result.aircraft.source if crawl_result.aircraft else None
+
+            self.log_repo.save_query_log(
+                icao24=icao24,
+                queries=queries,
+                final_status=final_status,
+                final_source=final_source,
+            )
+            logger.debug(f"Saved query log for {icao24} with {len(queries)} source queries")
+        except Exception as e:
+            logger.warning(f"Failed to save query log for {icao24}: {e}")
 
     def get_recent_activity(self, limit: int = 20) -> List[dict]:
         """Get recent crawl activity for the admin dashboard"""

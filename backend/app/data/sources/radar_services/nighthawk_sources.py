@@ -73,8 +73,8 @@ class NighthawkSource(AircraftMetadataSource):
                     source=f"nighthawk-{self.source_endpoint}"
                 )
                 if aircraft.is_complete_with_operator():
-                    return QueryResult.success(aircraft)
-                return QueryResult.partial(aircraft)
+                    return QueryResult.success(aircraft, raw_payload=data)
+                return QueryResult.partial(aircraft, raw_payload=data)
 
             elif response.status_code == 404:
                 logger.debug(f'Aircraft not found in {self._name}: {mode_s_hex}')

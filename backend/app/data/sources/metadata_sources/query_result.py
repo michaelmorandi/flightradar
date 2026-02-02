@@ -1,6 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Optional, Any
 from ....core.models.aircraft import Aircraft
 
 
@@ -26,16 +26,17 @@ class QueryResult:
     status: QueryStatus
     aircraft: Optional[Aircraft] = None
     error_message: Optional[str] = None
+    raw_payload: Optional[dict[str, Any]] = field(default=None)  # Raw response data for logging
 
     @classmethod
-    def success(cls, aircraft: Aircraft) -> 'QueryResult':
+    def success(cls, aircraft: Aircraft, raw_payload: dict = None) -> 'QueryResult':
         """Create a successful result with aircraft data"""
-        return cls(status=QueryStatus.SUCCESS, aircraft=aircraft)
+        return cls(status=QueryStatus.SUCCESS, aircraft=aircraft, raw_payload=raw_payload)
 
     @classmethod
-    def partial(cls, aircraft: Aircraft) -> 'QueryResult':
+    def partial(cls, aircraft: Aircraft, raw_payload: dict = None) -> 'QueryResult':
         """Create a result with partial aircraft data"""
-        return cls(status=QueryStatus.PARTIAL_DATA, aircraft=aircraft)
+        return cls(status=QueryStatus.PARTIAL_DATA, aircraft=aircraft, raw_payload=raw_payload)
 
     @classmethod
     def not_found(cls) -> 'QueryResult':
