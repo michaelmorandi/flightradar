@@ -2,12 +2,25 @@
   <div class="login-container">
     <div class="login-card">
       <h2 class="login-title">Admin Login</h2>
-      <form @submit.prevent="handleLogin">
+      <form @submit.prevent="handleLogin" action="/dashboard/login" method="post">
+        <!-- Hidden username for password manager detection -->
+        <input
+          type="text"
+          id="username"
+          name="username"
+          value="admin@system.local"
+          autocomplete="username"
+          class="visually-hidden"
+          tabindex="-1"
+          aria-hidden="true"
+          readonly
+        />
         <div class="form-group">
           <label for="password">Password</label>
           <input
             type="password"
             id="password"
+            name="password"
             v-model="password"
             :disabled="loading"
             placeholder="Enter admin password"
@@ -184,5 +197,18 @@ const handleLogin = async () => {
 
 .back-link i {
   margin-right: 4px;
+}
+
+/* Hidden but accessible to password managers */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 </style>

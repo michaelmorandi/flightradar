@@ -5,9 +5,25 @@
         <i class="bi bi-gear-wide-connected"></i>
         Crawler Status
       </h2>
-      <div class="refresh-indicator" :class="{ active: loading }">
-        <i class="bi bi-arrow-clockwise" :class="{ spinning: loading }"></i>
-        <span class="refresh-text">Auto-refresh: {{ refreshInterval / 1000 }}s</span>
+      <div class="header-controls">
+        <div v-if="stats.sources.length > 0" class="source-toggles">
+          <span class="toggles-label">Sources:</span>
+          <button
+            v-for="source in stats.sources"
+            :key="source.name"
+            class="source-toggle"
+            :class="{ enabled: source.enabled, disabled: !source.enabled, toggling: togglingSource === source.name }"
+            :disabled="togglingSource !== null"
+            @click="toggleSource(source.name, source.enabled)"
+            :title="source.enabled ? `Disable ${source.name}` : `Enable ${source.name}`"
+          >
+            {{ source.name }}
+          </button>
+        </div>
+        <div class="refresh-indicator" :class="{ active: loading }">
+          <i class="bi bi-arrow-clockwise" :class="{ spinning: loading }"></i>
+          <span class="refresh-text">{{ refreshInterval / 1000 }}s</span>
+        </div>
       </div>
     </div>
 
@@ -173,6 +189,11 @@ interface CircuitBreakerStats {
   seconds_until_retry: number;
 }
 
+interface SourceStatus {
+  name: string;
+  enabled: boolean;
+}
+
 interface CrawlerStats {
   enabled: boolean;
   queue_total: number;
@@ -182,6 +203,7 @@ interface CrawlerStats {
   service_error_failures: number;
   max_attempts_reached: number;
   circuit_breakers: Record<string, CircuitBreakerStats>;
+  sources: SourceStatus[];
 }
 
 interface ActivityItem {
@@ -204,7 +226,10 @@ const stats = ref<CrawlerStats>({
   service_error_failures: 0,
   max_attempts_reached: 0,
   circuit_breakers: {},
+  sources: [],
 });
+
+const togglingSource = ref<string | null>(null);
 
 const activity = ref<ActivityItem[]>([]);
 const loading = ref(false);
@@ -272,6 +297,26 @@ const formatBackoff = (seconds: number) => {
   return `${seconds}s`;
 };
 
+const toggleSource = async (sourceName: string, currentEnabled: boolean) => {
+  togglingSource.value = sourceName;
+  try {
+    await Axios.post(
+      `${config.flightApiUrl}/admin/crawler/sources/${encodeURIComponent(sourceName)}/toggle`,
+      { enabled: !currentEnabled },
+      { withCredentials: true }
+    );
+    // Update local state optimistically
+    const source = stats.value.sources.find(s => s.name === sourceName);
+    if (source) {
+      source.enabled = !currentEnabled;
+    }
+  } catch (err) {
+    console.error('Error toggling source:', err);
+  } finally {
+    togglingSource.value = null;
+  }
+};
+
 const startPolling = () => {
   if (intervalId === null) {
     intervalId = window.setInterval(fetchStats, refreshInterval);
@@ -319,6 +364,64 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.source-toggles {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toggles-label {
+  font-size: 0.75rem;
+  color: #888;
+  margin-right: 2px;
+}
+
+.source-toggle {
+  font-size: 0.7rem;
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  background: #f5f5f5;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.source-toggle:hover:not(:disabled) {
+  border-color: #bbb;
+}
+
+.source-toggle.enabled {
+  background: #e8f5e9;
+  border-color: #a5d6a7;
+  color: #2e7d32;
+}
+
+.source-toggle.disabled {
+  background: #fafafa;
+  border-color: #e0e0e0;
+  color: #9e9e9e;
+  text-decoration: line-through;
+}
+
+.source-toggle.toggling {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.source-toggle:disabled {
+  cursor: not-allowed;
 }
 
 .section-title {
@@ -738,7 +841,17 @@ onUnmounted(() => {
   .section-header {
     flex-direction: column;
     align-items: flex-start;
-    gap: 12px;
+  }
+
+  .header-controls {
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .source-toggles {
+    flex-wrap: wrap;
   }
 
   .activity-item {

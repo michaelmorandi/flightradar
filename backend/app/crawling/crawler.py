@@ -33,6 +33,13 @@ class CrawlActivity:
 
 
 @dataclass
+class SourceInfo:
+    """Information about a metadata source"""
+    name: str
+    enabled: bool = True
+
+
+@dataclass
 class CrawlResult:
     """Result of crawling metadata sources for a single aircraft"""
     aircraft: Optional[Aircraft] = None
@@ -83,6 +90,9 @@ class AirplaneCrawler:
         # Activity tracking for admin dashboard
         self._activity_log: deque[CrawlActivity] = deque(maxlen=MAX_ACTIVITY_ENTRIES)
 
+        # Volatile source enabled state (resets on restart)
+        self._source_enabled: dict[str, bool] = {source.name(): True for source in self.sources}
+
     def _query_aircraft_metadata(self, icao24: str) -> CrawlResult:
         """
         Query metadata sources for aircraft information.
@@ -106,6 +116,11 @@ class AirplaneCrawler:
                 continue
 
             source_name = source.name()
+
+            # Check if source is enabled (volatile admin toggle)
+            if not self._source_enabled.get(source_name, True):
+                logger.debug(f'Skipping {source_name} - disabled by admin')
+                continue
 
             # Check circuit breaker before querying
             if not self.circuit_breakers.is_source_available(source_name):
@@ -268,3 +283,26 @@ class AirplaneCrawler:
             }
             for a in activities
         ]
+
+    def get_sources_status(self) -> List[dict]:
+        """Get list of all sources with their enabled state (volatile)"""
+        return [
+            {
+                'name': source.name(),
+                'enabled': self._source_enabled.get(source.name(), True),
+            }
+            for source in self.sources
+        ]
+
+    def set_source_enabled(self, source_name: str, enabled: bool) -> bool:
+        """
+        Set the enabled state of a source (volatile, resets on restart).
+        Returns True if the source was found and updated, False otherwise.
+        """
+        # Check if source exists
+        source_names = [s.name() for s in self.sources]
+        if source_name not in source_names:
+            return False
+        self._source_enabled[source_name] = enabled
+        logger.info(f'Source {source_name} {"enabled" if enabled else "disabled"} by admin')
+        return True

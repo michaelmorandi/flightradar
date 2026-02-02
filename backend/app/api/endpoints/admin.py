@@ -40,6 +40,12 @@ class CircuitBreakerStats(BaseModel):
     seconds_until_retry: float
 
 
+class SourceStatusInline(BaseModel):
+    """Status of a single crawler source (inline in stats)."""
+    name: str
+    enabled: bool
+
+
 class CrawlerStats(BaseModel):
     """Crawler processing queue statistics."""
     enabled: bool
@@ -50,6 +56,7 @@ class CrawlerStats(BaseModel):
     service_error_failures: int
     max_attempts_reached: int
     circuit_breakers: dict[str, CircuitBreakerStats]
+    sources: list[SourceStatusInline] = []
 
 
 class CrawlerActivityItem(BaseModel):
@@ -65,6 +72,22 @@ class CrawlerActivityItem(BaseModel):
 class CrawlerActivityResponse(BaseModel):
     """Response containing recent crawler activity."""
     activity: list[CrawlerActivityItem]
+
+
+class SourceStatus(BaseModel):
+    """Status of a single crawler source."""
+    name: str
+    enabled: bool
+
+
+class SourcesResponse(BaseModel):
+    """Response containing all crawler sources."""
+    sources: list[SourceStatus]
+
+
+class SourceToggleRequest(BaseModel):
+    """Request to toggle a source's enabled state."""
+    enabled: bool
 
 
 class UserInfo(BaseModel):
@@ -289,8 +312,9 @@ async def get_crawler_stats(
     )
     queue_stats = processing_repo.get_stats()
 
-    # Get circuit breaker stats from the crawler if available
+    # Get circuit breaker stats and sources from the crawler if available
     circuit_breaker_stats = {}
+    sources = []
     if hasattr(request.app.state, 'crawler') and request.app.state.crawler:
         raw_cb_stats = request.app.state.crawler.get_circuit_breaker_stats()
         for source_name, stats in raw_cb_stats.items():
@@ -303,6 +327,9 @@ async def get_crawler_stats(
                 current_backoff_seconds=stats["current_backoff_seconds"],
                 seconds_until_retry=stats["seconds_until_retry"]
             )
+        # Get source enabled states
+        raw_sources = request.app.state.crawler.get_sources_status()
+        sources = [SourceStatusInline(**s) for s in raw_sources]
 
     return CrawlerStats(
         enabled=crawler_enabled,
@@ -312,7 +339,8 @@ async def get_crawler_stats(
         not_found_failures=queue_stats["not_found_failures"],
         service_error_failures=queue_stats["service_error_failures"],
         max_attempts_reached=queue_stats["max_attempts_reached"],
-        circuit_breakers=circuit_breaker_stats
+        circuit_breakers=circuit_breaker_stats,
+        sources=sources
     )
 
 
@@ -333,3 +361,51 @@ async def get_crawler_activity(
         activity = [CrawlerActivityItem(**item) for item in raw_activity]
 
     return CrawlerActivityResponse(activity=activity)
+
+
+@router.get('/admin/crawler/sources', response_model=SourcesResponse, tags=["admin"])
+async def get_crawler_sources(
+    request: Request,
+    current_user: AdminUserDep,
+) -> SourcesResponse:
+    """
+    Get all crawler sources with their enabled state.
+
+    The enabled state is volatile and resets when the server restarts.
+    Requires admin role.
+    """
+    sources = []
+    if hasattr(request.app.state, 'crawler') and request.app.state.crawler:
+        raw_sources = request.app.state.crawler.get_sources_status()
+        sources = [SourceStatus(**s) for s in raw_sources]
+
+    return SourcesResponse(sources=sources)
+
+
+@router.post('/admin/crawler/sources/{source_name}/toggle', response_model=SourceStatus, tags=["admin"])
+async def toggle_crawler_source(
+    request: Request,
+    source_name: str,
+    data: SourceToggleRequest,
+    current_user: AdminUserDep,
+) -> SourceStatus:
+    """
+    Toggle a crawler source's enabled state.
+
+    The enabled state is volatile and resets when the server restarts.
+    Requires admin role.
+    """
+    if not hasattr(request.app.state, 'crawler') or not request.app.state.crawler:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Crawler not available"
+        )
+
+    success = request.app.state.crawler.set_source_enabled(source_name, data.enabled)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Source '{source_name}' not found"
+        )
+
+    return SourceStatus(name=source_name, enabled=data.enabled)
