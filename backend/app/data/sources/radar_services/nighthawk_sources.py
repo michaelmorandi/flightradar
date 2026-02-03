@@ -72,6 +72,10 @@ class NighthawkSource(AircraftMetadataSource):
                     operator=data.get('owner'),
                     source=f"nighthawk-{self.source_endpoint}"
                 )
+                # Treat empty responses as not found (e.g., planespotters often returns only icao)
+                if aircraft.is_empty():
+                    logger.debug(f'Empty data from {self._name} for {mode_s_hex}, treating as not found')
+                    return QueryResult.not_found()
                 if aircraft.is_complete_with_operator():
                     return QueryResult.success(aircraft, raw_payload=data)
                 return QueryResult.partial(aircraft, raw_payload=data)

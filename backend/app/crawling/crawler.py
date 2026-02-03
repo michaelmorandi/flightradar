@@ -61,6 +61,25 @@ class CrawlResult:
     query_logs: List[SourceQueryLog] = field(default_factory=list)  # Log of all source queries
 
 
+def _is_sufficient(aircraft: Aircraft) -> bool:
+    """
+    Check if aircraft has enough data to stop querying additional sources.
+    Sufficient means: registration + type_code + (type_description OR operator)
+    This allows early stopping when we have 3 of 4 key fields.
+    """
+    has_reg = aircraft.reg is not None
+    has_type_code = aircraft.icao_type_code is not None
+    has_type_desc = aircraft.aircraft_type_description is not None
+    has_operator = aircraft.operator is not None
+
+    # Must have registration and type code at minimum
+    if not has_reg or not has_type_code:
+        return False
+
+    # Plus at least one of type_description or operator
+    return has_type_desc or has_operator
+
+
 class AirplaneCrawler:
     """Aircraft metadata crawler for retrieving and updating aircraft information"""
 
@@ -204,16 +223,28 @@ class AirplaneCrawler:
                             sources_used.append(source_name)
                             logger.debug(f'Merged additional data for {icao24} from {source_name}')
 
-                        # Check if merged result is now complete
-                        if best_result.is_complete_with_operator():
-                            best_result.source = '+'.join(sources_used)
-                            logger.info(f'Merged complete data for {icao24} from {best_result.source}')
-                            return CrawlResult(
-                                aircraft=best_result,
-                                had_service_error=had_service_error,
-                                all_not_found=False,
-                                query_logs=query_logs
-                            )
+                    # Check if merged result is now complete
+                    if best_result.is_complete_with_operator():
+                        best_result.source = '+'.join(sources_used)
+                        logger.info(f'Merged complete data for {icao24} from {best_result.source}')
+                        return CrawlResult(
+                            aircraft=best_result,
+                            had_service_error=had_service_error,
+                            all_not_found=False,
+                            query_logs=query_logs
+                        )
+
+                    # Early stop if we have sufficient data (3 of 4 key fields)
+                    # This avoids unnecessary calls to remaining sources
+                    if _is_sufficient(best_result):
+                        best_result.source = '+'.join(sources_used)
+                        logger.info(f'Sufficient data for {icao24} from {best_result.source}, stopping early')
+                        return CrawlResult(
+                            aircraft=best_result,
+                            had_service_error=had_service_error,
+                            all_not_found=False,
+                            query_logs=query_logs
+                        )
 
             except Exception as e:
                 logger.warning(f'Unexpected error from {source_name} for {icao24}: {e}')
