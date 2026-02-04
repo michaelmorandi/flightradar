@@ -15,6 +15,15 @@ class FailureType(Enum):
     SERVICE_ERROR = "service_error"  # Temporary error (should retry after cooldown)
 
 
+class CrawlReason(Enum):
+    """Reason why aircraft was queued for crawling"""
+    NOT_IN_DB = "not_in_db"  # Aircraft not found in database
+    NO_TIMESTAMP = "no_timestamp"  # Aircraft has no lastModified timestamp
+    INCOMPLETE_STALE = "incomplete_stale"  # Aircraft is incomplete and stale
+    STALE = "stale"  # Aircraft data is stale (complete but old)
+    UNKNOWN = "unknown"  # Unknown reason (error during classification)
+
+
 class AircraftProcessingRepository:
     """
     Repository for managing aircraft that need metadata processing.
@@ -45,8 +54,8 @@ class AircraftProcessingRepository:
         collection.create_index("last_attempt_time")
         collection.create_index("failure_type")
 
-    def add_aircraft(self, icao24: str) -> bool:
-        """Add aircraft to processing queue"""
+    def add_aircraft(self, icao24: str, crawl_reason: CrawlReason = CrawlReason.UNKNOWN) -> bool:
+        """Add aircraft to processing queue with crawl reason"""
         try:
             self.db[self.collection_name].insert_one({
                 "modeS": icao24.upper(),
@@ -54,6 +63,7 @@ class AircraftProcessingRepository:
                 "sources_queried": [],
                 "last_attempt_time": None,
                 "failure_type": FailureType.NONE.value,
+                "crawl_reason": crawl_reason.value,
                 "created_at": datetime.now()
             })
             return True
@@ -62,6 +72,18 @@ class AircraftProcessingRepository:
                 return True
             logger.error(f"Failed to add aircraft {icao24}: {e}")
             return False
+
+    def get_crawl_reason(self, icao24: str) -> Optional[str]:
+        """Get the crawl reason for an aircraft in the processing queue"""
+        try:
+            doc = self.db[self.collection_name].find_one(
+                {"modeS": icao24.upper()},
+                {"crawl_reason": 1}
+            )
+            return doc.get("crawl_reason") if doc else None
+        except PyMongoError as e:
+            logger.error(f"Failed to get crawl reason for {icao24}: {e}")
+            return None
 
     def get_aircraft_for_processing(self, limit: int = 50) -> List[str]:
         """

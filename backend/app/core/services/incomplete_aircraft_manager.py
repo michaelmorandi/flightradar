@@ -1,8 +1,8 @@
 import logging
 from datetime import datetime, timedelta
-from typing import Set, List
+from typing import Set, List, Tuple
 from ...data.repositories.aircraft_repository import AircraftRepository
-from ...data.repositories.aircraft_processing_repository import AircraftProcessingRepository
+from ...data.repositories.aircraft_processing_repository import AircraftProcessingRepository, CrawlReason
 
 logger = logging.getLogger("IncompleteAircraftManager")
 
@@ -49,7 +49,7 @@ class IncompleteAircraftManager:
     def schedule_aircraft_for_processing(self, icao24s: Set[str]) -> None:
         """
         Process a batch of aircraft and schedule them for metadata processing if they meet criteria.
-        
+
         Args:
             icao24s: Set of ICAO24 addresses to process
         """
@@ -57,22 +57,22 @@ class IncompleteAircraftManager:
             return
 
         aircraft_to_process = self._classify_unknown_aircraft(icao24s)
-        
+
         if aircraft_to_process:
             # Only add aircraft that don't already exist in unknown collection
             new_unknown_aircraft = [
-                icao24 for icao24 in aircraft_to_process 
+                (icao24, reason) for icao24, reason in aircraft_to_process
                 if not self.processing_aircraft_repo.aircraft_exists(icao24)
             ]
-            
+
             if new_unknown_aircraft:
                 logger.info(f"Adding {len(new_unknown_aircraft)} new aircraft (found {len(aircraft_to_process)} total requiring metadata)")
-                for icao24 in new_unknown_aircraft:
-                    self.processing_aircraft_repo.add_aircraft(icao24)
+                for icao24, reason in new_unknown_aircraft:
+                    self.processing_aircraft_repo.add_aircraft(icao24, reason)
             else:
                 logger.debug(f"All {len(aircraft_to_process)} aircraft requiring metadata already exist in unknown collection")
 
-    def _classify_unknown_aircraft(self, icao24s: Set[str]) -> List[str]:
+    def _classify_unknown_aircraft(self, icao24s: Set[str]) -> List[Tuple[str, CrawlReason]]:
         """
         Classify aircraft as unknown based on staleness and completeness criteria.
 
@@ -88,9 +88,9 @@ class IncompleteAircraftManager:
             icao24s: Set of ICAO24 addresses to classify
 
         Returns:
-            List of ICAO24 addresses that are classified as unknown
+            List of tuples (icao24, crawl_reason) for aircraft that need processing
         """
-        aircraft_to_process = []
+        aircraft_to_process: List[Tuple[str, CrawlReason]] = []
         staleness_threshold = datetime.now() - timedelta(days=self.staleness_days)
         incomplete_staleness_threshold = datetime.now() - timedelta(days=self.incomplete_staleness_days)
 
@@ -105,7 +105,7 @@ class IncompleteAircraftManager:
                 if existing_aircraft is None:
                     # Criteria 1: Aircraft not present in aircraft collection
                     logger.debug(f"Aircraft {icao24} not found in database")
-                    aircraft_to_process.append(icao24)
+                    aircraft_to_process.append((icao24, CrawlReason.NOT_IN_DB))
                     continue
 
                 aircraft_doc = self.aircraft_repo.db[self.aircraft_repo.collection_name].find_one(
@@ -120,21 +120,21 @@ class IncompleteAircraftManager:
                     if last_modified is None:
                         # No timestamp - always re-queue
                         logger.debug(f"Aircraft {icao24} has no lastModified, queuing")
-                        aircraft_to_process.append(icao24)
+                        aircraft_to_process.append((icao24, CrawlReason.NO_TIMESTAMP))
                     elif is_incomplete and last_modified < incomplete_staleness_threshold:
                         # Incomplete data - use shorter staleness threshold
                         logger.debug(f"Aircraft {icao24} is incomplete and stale ({self.incomplete_staleness_days}d), queuing")
-                        aircraft_to_process.append(icao24)
+                        aircraft_to_process.append((icao24, CrawlReason.INCOMPLETE_STALE))
                     elif last_modified < staleness_threshold:
                         # Complete data but old - use longer staleness threshold
                         logger.debug(f"Aircraft {icao24} is stale ({self.staleness_days}d), queuing")
-                        aircraft_to_process.append(icao24)
+                        aircraft_to_process.append((icao24, CrawlReason.STALE))
                     else:
                         logger.debug(f"Aircraft {icao24} was recently updated, skipping")
 
             except Exception as e:
                 logger.warning(f"Error classifying aircraft {icao24}: {e}")
-                aircraft_to_process.append(icao24)
+                aircraft_to_process.append((icao24, CrawlReason.UNKNOWN))
 
         return aircraft_to_process
 

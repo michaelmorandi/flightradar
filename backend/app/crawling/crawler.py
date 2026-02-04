@@ -32,6 +32,7 @@ class CrawlActivity:
     source: Optional[str] = None
     registration: Optional[str] = None
     aircraft_type: Optional[str] = None
+    crawl_reason: Optional[str] = None  # Why the aircraft was queued for crawling
 
 
 @dataclass
@@ -142,7 +143,8 @@ class AirplaneCrawler:
         best_result: Optional[Aircraft] = None
         sources_used: List[str] = []
         had_service_error = False
-        all_not_found = True
+        any_not_found = False  # Track if any source confirmed "not found"
+        any_source_queried = False  # Track if we actually queried any source
         query_logs: List[SourceQueryLog] = []
 
         for source in self.sources:
@@ -159,8 +161,8 @@ class AirplaneCrawler:
             # Check circuit breaker before querying
             if not self.circuit_breakers.is_source_available(source_name):
                 logger.debug(f'Skipping {source_name} - circuit breaker open')
-                had_service_error = True  # Treat as potential service error
-                all_not_found = False
+                # Don't set had_service_error here - circuit breaker skips shouldn't
+                # override a "not found" response from sources that were actually queried
                 query_logs.append(SourceQueryLog(
                     source=source_name,
                     status='skipped_circuit_breaker',
@@ -183,23 +185,24 @@ class AirplaneCrawler:
                 )
                 query_logs.append(query_log)
 
+                any_source_queried = True
+
                 if result.status == QueryStatus.SERVICE_ERROR:
                     # Service error - record failure and continue to next source
                     self.circuit_breakers.record_failure(source_name)
                     had_service_error = True
-                    all_not_found = False
                     logger.warning(f'Service error from {source_name} for {icao24}: {result.error_message}')
                     continue
 
                 if result.status == QueryStatus.NOT_FOUND:
-                    # Not found in this source - continue to next
+                    # Not found in this source - this is a definitive answer from a working source
                     self.circuit_breakers.record_success(source_name)  # Service is working
+                    any_not_found = True  # At least one source confirmed "not found"
                     logger.debug(f'Aircraft {icao24} not found in {source_name}')
                     continue
 
                 # Success or partial data
                 self.circuit_breakers.record_success(source_name)
-                all_not_found = False
                 aircraft = result.aircraft
 
                 if aircraft:
@@ -250,7 +253,7 @@ class AirplaneCrawler:
                 logger.warning(f'Unexpected error from {source_name} for {icao24}: {e}')
                 self.circuit_breakers.record_failure(source_name)
                 had_service_error = True
-                all_not_found = False
+                any_source_queried = True
                 query_logs.append(SourceQueryLog(
                     source=source_name,
                     status='exception',
@@ -265,10 +268,22 @@ class AirplaneCrawler:
         if best_result:
             logger.info(f'Returning {"partial" if not best_result.is_complete_with_operator() else "complete"} data for {icao24} from {best_result.source}')
 
+        # Determine final status:
+        # - If we have data, return it (not_found=False, service_error=False)
+        # - If any source confirmed "not found", treat as permanent failure
+        # - Only if NO source confirmed "not found" AND we had service errors, retry later
+        # - If no sources were queried at all (all circuit breakers open), treat as service error
+        is_not_found = any_not_found and best_result is None
+        is_service_error = (
+            not is_not_found and  # "not found" takes priority over service errors
+            (had_service_error or not any_source_queried) and  # actual errors or all skipped
+            best_result is None
+        )
+
         return CrawlResult(
             aircraft=best_result,
-            had_service_error=had_service_error,
-            all_not_found=all_not_found and best_result is None,
+            had_service_error=is_service_error,
+            all_not_found=is_not_found,
             query_logs=query_logs
         )
 
@@ -296,6 +311,9 @@ class AirplaneCrawler:
 
             for icao24 in aircraft_to_process:
                 try:
+                    # Get crawl reason before processing (it will be removed on success)
+                    crawl_reason = self.processing_repo.get_crawl_reason(icao24)
+
                     crawl_result = self._query_aircraft_metadata(icao24)
 
                     if crawl_result.aircraft:
@@ -303,30 +321,30 @@ class AirplaneCrawler:
                         if self.aircraft_repo.insert_aircraft(crawl_result.aircraft):
                             self.processing_repo.remove_aircraft(icao24)
                             status = 'success' if crawl_result.aircraft.is_complete_with_operator() else 'partial'
-                            self._record_activity(icao24, status, crawl_result.aircraft)
+                            self._record_activity(icao24, status, crawl_result.aircraft, crawl_reason)
                             logger.info(f"Successfully processed aircraft: {icao24}")
                         else:
                             # Database error - treat as service error (retry later)
                             logger.warning(f"Failed to insert aircraft {icao24} to database")
                             self.processing_repo.record_service_error(icao24, "Database insert failed")
-                            self._record_activity(icao24, 'service_error')
+                            self._record_activity(icao24, 'service_error', crawl_reason=crawl_reason)
                             status = 'service_error'
                     elif crawl_result.had_service_error:
                         # Service error occurred - don't increment attempts, just record for retry
                         self.processing_repo.record_service_error(icao24, crawl_result.error_message)
-                        self._record_activity(icao24, 'service_error')
+                        self._record_activity(icao24, 'service_error', crawl_reason=crawl_reason)
                         logger.debug(f"Service error for {icao24}, will retry after cooldown")
                         status = 'service_error'
                     elif crawl_result.all_not_found:
                         # Aircraft not found in any source - increment "not found" attempts
                         self.processing_repo.record_not_found(icao24)
-                        self._record_activity(icao24, 'not_found')
+                        self._record_activity(icao24, 'not_found', crawl_reason=crawl_reason)
                         logger.debug(f"Aircraft {icao24} not found in any source, incremented attempts")
                         status = 'not_found'
                     else:
                         # Unexpected state - treat as service error to be safe
                         self.processing_repo.record_service_error(icao24, "Unknown crawl state")
-                        self._record_activity(icao24, 'service_error')
+                        self._record_activity(icao24, 'service_error', crawl_reason=crawl_reason)
                         logger.warning(f"Unexpected crawl state for {icao24}")
                         status = 'service_error'
 
@@ -345,7 +363,7 @@ class AirplaneCrawler:
         """Get statistics for all circuit breakers"""
         return self.circuit_breakers.get_all_stats()
 
-    def _record_activity(self, icao24: str, status: str, aircraft: Optional[Aircraft] = None) -> None:
+    def _record_activity(self, icao24: str, status: str, aircraft: Optional[Aircraft] = None, crawl_reason: Optional[str] = None) -> None:
         """Record a crawl activity for the admin dashboard"""
         activity = CrawlActivity(
             icao24=icao24,
@@ -354,6 +372,7 @@ class AirplaneCrawler:
             source=aircraft.source if aircraft else None,
             registration=aircraft.reg if aircraft else None,
             aircraft_type=aircraft.icao_type_code if aircraft else None,
+            crawl_reason=crawl_reason,
         )
         self._activity_log.appendleft(activity)
 
@@ -394,6 +413,7 @@ class AirplaneCrawler:
                 'source': a.source,
                 'registration': a.registration,
                 'aircraft_type': a.aircraft_type,
+                'crawl_reason': a.crawl_reason,
             }
             for a in activities
         ]

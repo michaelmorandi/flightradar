@@ -166,11 +166,71 @@
               <span v-if="item.registration" class="detail-reg">{{ item.registration }}</span>
               <span v-if="item.aircraft_type" class="detail-type">{{ item.aircraft_type }}</span>
               <span v-if="item.source" class="detail-source">{{ item.source }}</span>
+              <span v-if="item.crawl_reason" class="detail-reason">{{ formatCrawlReason(item.crawl_reason) }}</span>
             </div>
+            <button
+              class="log-button"
+              @click="showLogs(item.icao24)"
+              title="View crawler logs"
+            >
+              <i class="bi bi-journal-text"></i>
+            </button>
           </div>
         </div>
       </div>
     </template>
+
+    <!-- Log Modal -->
+    <div v-if="logModal.visible" class="modal-overlay" @click.self="closeLogModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Crawler Logs: {{ logModal.icao24 }}</h3>
+          <button class="modal-close" @click="closeLogModal">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div v-if="logModal.loading" class="modal-loading">
+            <i class="bi bi-arrow-clockwise spinning"></i>
+            Loading logs...
+          </div>
+          <div v-else-if="logModal.error" class="modal-error">
+            <i class="bi bi-exclamation-triangle"></i>
+            {{ logModal.error }}
+          </div>
+          <div v-else-if="logModal.logs.length === 0" class="modal-empty">
+            <i class="bi bi-info-circle"></i>
+            No logs found for this aircraft
+          </div>
+          <div v-else class="logs-list">
+            <div v-for="(log, logIndex) in logModal.logs" :key="logIndex" class="log-entry">
+              <div class="log-header">
+                <span class="log-time">{{ formatTime(log.timestamp) }}</span>
+                <span class="log-status" :class="log.final_status">{{ log.final_status }}</span>
+                <span v-if="log.final_source" class="log-source">{{ log.final_source }}</span>
+              </div>
+              <div class="log-queries">
+                <div v-for="(query, qIndex) in log.queries" :key="qIndex" class="query-entry">
+                  <div class="query-header">
+                    <span class="query-source">{{ query.source }}</span>
+                    <span class="query-status" :class="query.status">{{ query.status }}</span>
+                    <span class="query-duration">{{ query.duration_ms }}ms</span>
+                  </div>
+                  <div v-if="query.error" class="query-error">{{ query.error }}</div>
+                  <div v-if="query.payload" class="query-payload">
+                    <button class="payload-toggle" @click="togglePayload(logIndex, qIndex)">
+                      <i :class="isPayloadExpanded(logIndex, qIndex) ? 'bi bi-chevron-down' : 'bi bi-chevron-right'"></i>
+                      Response
+                    </button>
+                    <pre v-if="isPayloadExpanded(logIndex, qIndex)" class="payload-content">{{ JSON.stringify(query.payload, null, 2) }}</pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -213,6 +273,32 @@ interface ActivityItem {
   source: string | null;
   registration: string | null;
   aircraft_type: string | null;
+  crawl_reason: string | null;
+}
+
+interface CrawlerQueryLog {
+  source: string;
+  status: string;
+  duration_ms: number;
+  payload: Record<string, unknown> | null;
+  error: string | null;
+}
+
+interface CrawlerLogEntry {
+  icao24: string;
+  timestamp: string;
+  queries: CrawlerQueryLog[];
+  final_status: string;
+  final_source: string | null;
+  query_count: number;
+}
+
+interface LogModal {
+  visible: boolean;
+  icao24: string;
+  loading: boolean;
+  error: string;
+  logs: CrawlerLogEntry[];
 }
 
 const refreshInterval = 5000; // 5 seconds
@@ -235,6 +321,16 @@ const activity = ref<ActivityItem[]>([]);
 const loading = ref(false);
 const error = ref('');
 let intervalId: number | null = null;
+
+// Log modal state
+const logModal = ref<LogModal>({
+  visible: false,
+  icao24: '',
+  loading: false,
+  error: '',
+  logs: [],
+});
+const expandedPayloads = ref<Set<string>>(new Set());
 
 const fetchStats = async () => {
   loading.value = true;
@@ -297,6 +393,17 @@ const formatBackoff = (seconds: number) => {
   return `${seconds}s`;
 };
 
+const formatCrawlReason = (reason: string) => {
+  switch (reason) {
+    case 'not_in_db': return 'New';
+    case 'no_timestamp': return 'No timestamp';
+    case 'incomplete_stale': return 'Incomplete';
+    case 'stale': return 'Stale';
+    case 'unknown': return 'Unknown';
+    default: return reason;
+  }
+};
+
 const toggleSource = async (sourceName: string, currentEnabled: boolean) => {
   togglingSource.value = sourceName;
   try {
@@ -315,6 +422,47 @@ const toggleSource = async (sourceName: string, currentEnabled: boolean) => {
   } finally {
     togglingSource.value = null;
   }
+};
+
+const showLogs = async (icao24: string) => {
+  logModal.value = {
+    visible: true,
+    icao24,
+    loading: true,
+    error: '',
+    logs: [],
+  };
+  expandedPayloads.value.clear();
+
+  try {
+    const response = await Axios.get<{ icao24: string; logs: CrawlerLogEntry[] }>(
+      `${config.flightApiUrl}/admin/crawler/logs/${encodeURIComponent(icao24)}`,
+      { withCredentials: true }
+    );
+    logModal.value.logs = response.data.logs;
+  } catch (err: any) {
+    logModal.value.error = err.response?.data?.detail || 'Failed to load logs';
+    console.error('Error fetching crawler logs:', err);
+  } finally {
+    logModal.value.loading = false;
+  }
+};
+
+const closeLogModal = () => {
+  logModal.value.visible = false;
+};
+
+const togglePayload = (logIndex: number, queryIndex: number) => {
+  const key = `${logIndex}-${queryIndex}`;
+  if (expandedPayloads.value.has(key)) {
+    expandedPayloads.value.delete(key);
+  } else {
+    expandedPayloads.value.add(key);
+  }
+};
+
+const isPayloadExpanded = (logIndex: number, queryIndex: number) => {
+  return expandedPayloads.value.has(`${logIndex}-${queryIndex}`);
 };
 
 const startPolling = () => {
@@ -746,7 +894,7 @@ onUnmounted(() => {
 
 .activity-item {
   display: grid;
-  grid-template-columns: 80px 80px 90px 1fr;
+  grid-template-columns: 80px 80px 90px 1fr auto;
   gap: 12px;
   align-items: center;
   padding: 10px 12px;
@@ -830,6 +978,273 @@ onUnmounted(() => {
   background: #e3f2fd;
   padding: 1px 6px;
   border-radius: 4px;
+}
+
+.detail-reason {
+  color: #7b1fa2;
+  font-size: 0.7rem;
+  background: #f3e5f5;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-style: italic;
+}
+
+/* Log Button */
+.log-button {
+  background: transparent;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  color: #666;
+  transition: all 0.15s;
+}
+
+.log-button:hover {
+  background: #e3f2fd;
+  border-color: #1976d2;
+  color: #1976d2;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-content {
+  background: #fff;
+  border-radius: 12px;
+  max-width: 800px;
+  width: 100%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.modal-close {
+  background: transparent;
+  border: none;
+  font-size: 1.2rem;
+  color: #666;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  color: #333;
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-loading,
+.modal-error,
+.modal-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px;
+  justify-content: center;
+  color: #666;
+}
+
+.modal-error {
+  color: #c62828;
+  background: #ffebee;
+  border-radius: 8px;
+}
+
+/* Log Entry Styles */
+.logs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.log-entry {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.log-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+.log-time {
+  font-family: monospace;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.log-status {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.log-status.success {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.log-status.partial {
+  background: #fff3e0;
+  color: #ef6c00;
+}
+
+.log-status.not_found {
+  background: #f5f5f5;
+  color: #757575;
+}
+
+.log-status.service_error {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.log-source {
+  font-size: 0.8rem;
+  color: #1976d2;
+  background: #e3f2fd;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.log-queries {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.query-entry {
+  background: #fff;
+  border-radius: 6px;
+  padding: 10px;
+  border: 1px solid #eee;
+}
+
+.query-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.query-source {
+  font-weight: 500;
+  color: #333;
+}
+
+.query-status {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 8px;
+  text-transform: uppercase;
+}
+
+.query-status.success,
+.query-status.partial_data {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.query-status.not_found {
+  background: #f5f5f5;
+  color: #757575;
+}
+
+.query-status.service_error {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.query-status.skipped_circuit_breaker {
+  background: #fff3e0;
+  color: #ef6c00;
+}
+
+.query-duration {
+  font-size: 0.75rem;
+  color: #888;
+  font-family: monospace;
+}
+
+.query-error {
+  margin-top: 8px;
+  padding: 8px;
+  background: #ffebee;
+  border-radius: 4px;
+  color: #c62828;
+  font-size: 0.8rem;
+}
+
+.query-payload {
+  margin-top: 8px;
+}
+
+.payload-toggle {
+  background: transparent;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  color: #666;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.payload-toggle:hover {
+  background: #f5f5f5;
+}
+
+.payload-content {
+  margin-top: 8px;
+  padding: 10px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
 }
 
 /* Responsive */

@@ -22,6 +22,7 @@ from ...auth.anonymous import ADMIN_EMAIL, password_helper
 from ...auth.config import get_jwt_strategy, cookie_transport
 from ...config import Config
 from ...data.repositories.aircraft_processing_repository import AircraftProcessingRepository
+from ...data.repositories.crawler_log_repository import CrawlerLogRepository
 
 
 class DashboardStats(BaseModel):
@@ -67,6 +68,7 @@ class CrawlerActivityItem(BaseModel):
     source: Optional[str] = None
     registration: Optional[str] = None
     aircraft_type: Optional[str] = None
+    crawl_reason: Optional[str] = None  # Why the aircraft was queued for crawling
 
 
 class CrawlerActivityResponse(BaseModel):
@@ -88,6 +90,31 @@ class SourcesResponse(BaseModel):
 class SourceToggleRequest(BaseModel):
     """Request to toggle a source's enabled state."""
     enabled: bool
+
+
+class CrawlerQueryLog(BaseModel):
+    """A single source query within a crawler log entry."""
+    source: str
+    status: str
+    duration_ms: int
+    payload: Optional[dict] = None
+    error: Optional[str] = None
+
+
+class CrawlerLogEntry(BaseModel):
+    """A single crawler log entry with all source queries."""
+    icao24: str
+    timestamp: str
+    queries: list[CrawlerQueryLog]
+    final_status: str
+    final_source: Optional[str] = None
+    query_count: int
+
+
+class CrawlerLogsResponse(BaseModel):
+    """Response containing crawler logs for an aircraft."""
+    icao24: str
+    logs: list[CrawlerLogEntry]
 
 
 class UserInfo(BaseModel):
@@ -409,3 +436,43 @@ async def toggle_crawler_source(
         )
 
     return SourceStatus(name=source_name, enabled=data.enabled)
+
+
+@router.get('/admin/crawler/logs/{icao24}', response_model=CrawlerLogsResponse, tags=["admin"])
+async def get_crawler_logs(
+    icao24: str,
+    current_user: AdminUserDep,
+    mongodb: Database = Depends(get_mongodb),
+) -> CrawlerLogsResponse:
+    """
+    Get crawler query logs for a specific aircraft.
+
+    Returns detailed logs of all source queries made for this aircraft,
+    including response payloads and timing information.
+    Requires admin role.
+    """
+    log_repo = CrawlerLogRepository(mongodb)
+    raw_logs = log_repo.get_logs_for_aircraft(icao24.upper(), limit=10)
+
+    logs = []
+    for log in raw_logs:
+        queries = [
+            CrawlerQueryLog(
+                source=q.get("source", "unknown"),
+                status=q.get("status", "unknown"),
+                duration_ms=q.get("duration_ms", 0),
+                payload=q.get("payload"),
+                error=q.get("error"),
+            )
+            for q in log.get("queries", [])
+        ]
+        logs.append(CrawlerLogEntry(
+            icao24=log.get("icao24", icao24.upper()),
+            timestamp=log.get("timestamp", datetime.utcnow()).isoformat() if isinstance(log.get("timestamp"), datetime) else str(log.get("timestamp", "")),
+            queries=queries,
+            final_status=log.get("final_status", "unknown"),
+            final_source=log.get("final_source"),
+            query_count=log.get("query_count", len(queries)),
+        ))
+
+    return CrawlerLogsResponse(icao24=icao24.upper(), logs=logs)
