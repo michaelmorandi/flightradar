@@ -11,7 +11,7 @@
 import Axios from 'axios';
 import { setupCache, type AxiosCacheInstance, type CacheRequestConfig } from 'axios-cache-interceptor';
 import { config } from '@/config';
-import type { Flight, Aircraft, TerrestialPosition, PaginatedFlightsResponse } from '@/model/backendModel';
+import type { Flight, Aircraft, TerrestialPosition, PaginatedFlightsResponse, AirportInfo } from '@/model/backendModel';
 
 /** Cache TTL for flight list (1 second) */
 const FLIGHTS_CACHE_TTL = 1000;
@@ -194,6 +194,24 @@ export class FlightApiService {
     } catch (error) {
       console.error(`Error fetching positions for flight ${flightId}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Get airport information by IATA code from HexDB.
+   */
+  async getAirportInfo(iata: string): Promise<AirportInfo | null> {
+    try {
+      const response = await Axios.get(`${HEXDB_API_BASEPATH}airport/iata/${iata}`);
+
+      if (response.status >= 200 && response.status < 300 && response.data?.airport) {
+        return response.data as AirportInfo;
+      }
+
+      return null;
+    } catch (error) {
+      console.debug(`Airport not found for IATA code ${iata}`);
+      return null;
     }
   }
 

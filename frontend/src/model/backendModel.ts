@@ -33,3 +33,13 @@ export interface Aircraft {
   reg?: string;
   op?: string;
 }
+
+export interface AirportInfo {
+  country_code: string;
+  region_name: string;
+  iata: string;
+  icao: string;
+  airport: string;
+  latitude: number;
+  longitude: number;
+}

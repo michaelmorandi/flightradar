@@ -6,7 +6,12 @@
         <DetailField label="Silhouette" :imageUrl="silhouetteUrl(aircraft && aircraft.icaoType ? aircraft.icaoType : '')" :showGenericFallback="true" />
       </div>
       <div class="col" v-if="routeInfo">
-        <DetailField label="Route" :text="formattedRoute" />
+        <div class="route-field">
+          <div class="labelText">Route</div>
+          <div class="valueText route-value">
+            <AirportIataCode :iata="departureAirport!" /> ➞ <AirportIataCode :iata="arrivalAirport!" />
+          </div>
+        </div>
       </div>
     </div>
     <div class="row">
@@ -40,6 +45,7 @@
 
 <script setup lang="ts">
 import DetailField from '@/components/flights/DetailField.vue';
+import AirportIataCode from '@/components/flights/AirportIataCode.vue';
 import { Flight, Aircraft } from '@/model/backendModel';
 import { getFlightApiService } from '@/services/flightApiService';
 import { getDataIngestionService } from '@/services/dataIngestionService';
@@ -254,9 +260,17 @@ const categoryTooltip = computed(() => {
   return undefined;
 });
 
-const formattedRoute = computed(() => {
+const departureAirport = computed(() => {
   if (routeInfo.value) {
-    return routeInfo.value.replace(/-/g, '➞');
+    return routeInfo.value.split('-')[0];
+  }
+  return null;
+});
+
+const arrivalAirport = computed(() => {
+  if (routeInfo.value) {
+    const parts = routeInfo.value.split('-');
+    return parts.length > 1 ? parts[1] : null;
   }
   return null;
 });
@@ -266,6 +280,28 @@ const formattedRoute = computed(() => {
 .title {
   font-size: 2em;
   text-align: left;
+}
+
+.route-field {
+  position: relative;
+  height: 45px;
+}
+
+.route-field .labelText {
+  font-size: 0.7em;
+  text-transform: uppercase;
+  color: rgb(100, 100, 100);
+  position: absolute;
+  top: 0px;
+  left: 0px;
+}
+
+.route-field .route-value {
+  text-align: left;
+  font-size: 1em;
+  position: absolute;
+  top: 15px;
+  left: 0px;
 }
 
 .categoryText {
