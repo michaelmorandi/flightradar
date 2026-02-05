@@ -169,6 +169,7 @@
               <span v-if="item.crawl_reason" class="detail-reason">{{ formatCrawlReason(item.crawl_reason) }}</span>
             </div>
             <button
+              v-if="item.query_count >= 2"
               class="log-button"
               @click="showLogs(item.icao24)"
               title="View crawler logs"
@@ -274,6 +275,7 @@ interface ActivityItem {
   registration: string | null;
   aircraft_type: string | null;
   crawl_reason: string | null;
+  query_count: number;  // Logs only exist when >= 2
 }
 
 interface CrawlerQueryLog {

@@ -1,3 +1,11 @@
+"""
+MongoDB Repository
+
+Main repository for flights, positions, and unknown aircraft data.
+
+Note: Collection and indexes are managed by app.data.schema module.
+"""
+
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Tuple, Optional, Any, Set
 from pymongo.database import Database
@@ -10,7 +18,7 @@ from ..models import Flight, IncompleteAircraft
 
 
 def handle_mongodb_errors(func):
-    """Decorator to handle MongoDB specidic errors"""
+    """Decorator to handle MongoDB specific errors"""
     @wraps(func)
     def wrapper(*args, **kwargs):
         try:
@@ -41,9 +49,6 @@ class MongoDBRepository:
         self.positions_collection_name = positions_collection_name
         self.unknown_aircraft_collection_name = unknown_aircraft_collection_name
 
-        # Create indexes for better performance
-        self._ensure_indexes()
-
     @staticmethod
     def split_flights(positions: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
         """Splits position data into 'flights' based on time gaps"""
@@ -63,35 +68,6 @@ class MongoDBRepository:
 
             flights.append(positions[start_idx:])
         return flights
-
-    def _ensure_indexes(self):
-        """Create indexes for better query performance"""
-        # Flights collection indexes
-        existing_indexes = self.flights_collection.index_information()
-        
-        # Drop the existing unique modeS index if it exists
-        if "modeS_1" in existing_indexes:
-            # Check if it's a unique index
-            if existing_indexes["modeS_1"].get("unique", False):
-                # Drop the unique index
-                self.flights_collection.drop_index("modeS_1")
-                # Create a non-unique index
-                self.flights_collection.create_index("modeS", unique=False)
-        else:
-            # Create a non-unique index if it doesn't exist
-            self.flights_collection.create_index("modeS", unique=False)
-            
-        # Create index for last_contact
-        self.flights_collection.create_index("last_contact")
-        
-        # Create compound index for modeS + callsign for faster lookups
-        self.flights_collection.create_index([("modeS", 1), ("callsign", 1)])
-
-        # Positions collection indexes
-        self.positions_collection.create_index([("flight_id", 1), ("timestmp", 1)])
-        
-        self.unknown_aircraft_collection.create_index("modeS", unique=True)
-        self.unknown_aircraft_collection.create_index("last_seen")
 
     def get_flights(self, modeS_addr: str) -> List[Dict[str, Any]]:
         """Get flights by ICAO Mode-S address"""

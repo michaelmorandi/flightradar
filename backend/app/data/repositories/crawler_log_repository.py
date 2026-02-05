@@ -3,12 +3,15 @@ Crawler Log Repository
 
 Stores crawler query history for aircraft that trigger calls to multiple sources.
 Each log entry contains the ICAO24 address, timestamp, and query results from each source.
+
+Note: Collection and indexes are managed by app.data.schema module.
+TTL: 7 days (defined in schema.py)
 """
 
 from datetime import datetime
 from typing import List, Optional, Any
 from pymongo.database import Database
-from pymongo.errors import PyMongoError, OperationFailure
+from pymongo.errors import PyMongoError
 import logging
 
 logger = logging.getLogger(__name__)
@@ -21,26 +24,7 @@ class CrawlerLogRepository:
 
     def __init__(self, mongodb: Database):
         self.db = mongodb
-        self._ensure_collection()
-
-    def _ensure_collection(self):
-        """Ensure collection exists with proper indexes."""
-        if self.COLLECTION_NAME not in self.db.list_collection_names():
-            self.db.create_collection(self.COLLECTION_NAME)
-
-        collection = self.db[self.COLLECTION_NAME]
-        # Index for querying by icao24
-        collection.create_index("icao24")
-        # TTL index to auto-expire old logs after 30 days
-        try:
-            collection.create_index("timestamp", expireAfterSeconds=30 * 24 * 60 * 60)
-        except OperationFailure as e:
-            if e.code == 85:  # IndexOptionsConflict
-                # Drop existing index and recreate with TTL
-                collection.drop_index("timestamp_1")
-                collection.create_index("timestamp", expireAfterSeconds=30 * 24 * 60 * 60)
-            else:
-                raise
+        self.collection = mongodb[self.COLLECTION_NAME]
 
     def save_query_log(
         self,

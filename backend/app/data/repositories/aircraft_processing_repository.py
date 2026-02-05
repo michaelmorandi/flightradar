@@ -1,3 +1,11 @@
+"""
+Aircraft Processing Repository
+
+Manages aircraft that need metadata processing (crawling queue).
+
+Note: Collection and indexes are managed by app.data.schema module.
+"""
+
 import logging
 from datetime import datetime, timedelta
 from enum import Enum
@@ -37,22 +45,15 @@ class AircraftProcessingRepository:
     when external services recover from outages.
     """
 
+    COLLECTION_NAME = "aircraft_to_process"
+
     def __init__(self, mongodb: Database, max_attempts: int = 5,
                  service_error_reset_hours: int = 6):
         self.db = mongodb
-        self.collection_name = "aircraft_to_process"
+        self.collection_name = self.COLLECTION_NAME
+        self.collection = mongodb[self.COLLECTION_NAME]
         self.max_attempts = max_attempts
         self.service_error_reset_hours = service_error_reset_hours
-
-        # Create collection and indexes if needed
-        if self.collection_name not in self.db.list_collection_names():
-            self.db.create_collection(self.collection_name)
-
-        collection = self.db[self.collection_name]
-        collection.create_index("modeS", unique=True)
-        collection.create_index("query_attempts")
-        collection.create_index("last_attempt_time")
-        collection.create_index("failure_type")
 
     def add_aircraft(self, icao24: str, crawl_reason: CrawlReason = CrawlReason.UNKNOWN) -> bool:
         """Add aircraft to processing queue with crawl reason"""

@@ -33,6 +33,7 @@ class CrawlActivity:
     registration: Optional[str] = None
     aircraft_type: Optional[str] = None
     crawl_reason: Optional[str] = None  # Why the aircraft was queued for crawling
+    query_count: int = 1  # Number of sources queried (logs only saved when >= 2)
 
 
 @dataclass
@@ -316,35 +317,37 @@ class AirplaneCrawler:
 
                     crawl_result = self._query_aircraft_metadata(icao24)
 
+                    query_count = len(crawl_result.query_logs)
+
                     if crawl_result.aircraft:
                         # Found data (complete or partial) - save it
                         if self.aircraft_repo.insert_aircraft(crawl_result.aircraft):
                             self.processing_repo.remove_aircraft(icao24)
                             status = 'success' if crawl_result.aircraft.is_complete_with_operator() else 'partial'
-                            self._record_activity(icao24, status, crawl_result.aircraft, crawl_reason)
+                            self._record_activity(icao24, status, crawl_result.aircraft, crawl_reason, query_count)
                             logger.info(f"Successfully processed aircraft: {icao24}")
                         else:
                             # Database error - treat as service error (retry later)
                             logger.warning(f"Failed to insert aircraft {icao24} to database")
                             self.processing_repo.record_service_error(icao24, "Database insert failed")
-                            self._record_activity(icao24, 'service_error', crawl_reason=crawl_reason)
+                            self._record_activity(icao24, 'service_error', crawl_reason=crawl_reason, query_count=query_count)
                             status = 'service_error'
                     elif crawl_result.had_service_error:
                         # Service error occurred - don't increment attempts, just record for retry
                         self.processing_repo.record_service_error(icao24, crawl_result.error_message)
-                        self._record_activity(icao24, 'service_error', crawl_reason=crawl_reason)
+                        self._record_activity(icao24, 'service_error', crawl_reason=crawl_reason, query_count=query_count)
                         logger.debug(f"Service error for {icao24}, will retry after cooldown")
                         status = 'service_error'
                     elif crawl_result.all_not_found:
                         # Aircraft not found in any source - increment "not found" attempts
                         self.processing_repo.record_not_found(icao24)
-                        self._record_activity(icao24, 'not_found', crawl_reason=crawl_reason)
+                        self._record_activity(icao24, 'not_found', crawl_reason=crawl_reason, query_count=query_count)
                         logger.debug(f"Aircraft {icao24} not found in any source, incremented attempts")
                         status = 'not_found'
                     else:
                         # Unexpected state - treat as service error to be safe
                         self.processing_repo.record_service_error(icao24, "Unknown crawl state")
-                        self._record_activity(icao24, 'service_error', crawl_reason=crawl_reason)
+                        self._record_activity(icao24, 'service_error', crawl_reason=crawl_reason, query_count=query_count)
                         logger.warning(f"Unexpected crawl state for {icao24}")
                         status = 'service_error'
 
@@ -363,7 +366,8 @@ class AirplaneCrawler:
         """Get statistics for all circuit breakers"""
         return self.circuit_breakers.get_all_stats()
 
-    def _record_activity(self, icao24: str, status: str, aircraft: Optional[Aircraft] = None, crawl_reason: Optional[str] = None) -> None:
+    def _record_activity(self, icao24: str, status: str, aircraft: Optional[Aircraft] = None,
+                         crawl_reason: Optional[str] = None, query_count: int = 1) -> None:
         """Record a crawl activity for the admin dashboard"""
         activity = CrawlActivity(
             icao24=icao24,
@@ -373,6 +377,7 @@ class AirplaneCrawler:
             registration=aircraft.reg if aircraft else None,
             aircraft_type=aircraft.icao_type_code if aircraft else None,
             crawl_reason=crawl_reason,
+            query_count=query_count,
         )
         self._activity_log.appendleft(activity)
 
@@ -414,6 +419,7 @@ class AirplaneCrawler:
                 'registration': a.registration,
                 'aircraft_type': a.aircraft_type,
                 'crawl_reason': a.crawl_reason,
+                'query_count': a.query_count,
             }
             for a in activities
         ]

@@ -1,3 +1,11 @@
+"""
+Aircraft Repository
+
+Stores master aircraft data (registration, type, operator, etc.).
+
+Note: Collection and indexes are managed by app.data.schema module.
+"""
+
 from datetime import datetime
 import logging
 from pymongo.database import Database
@@ -7,19 +15,18 @@ from ...core.models.aircraft import Aircraft
 
 logger = logging.getLogger(__name__)
 
+
 class AircraftRepository:
-    """ MongoDB implementation of Aircraft Repository """
+    """MongoDB implementation of Aircraft Repository."""
+
+    COLLECTION_NAME = "aircraft"
 
     def __init__(self, mongodb: Database):
         self.db = mongodb
-        self.collection_name = "aircraft"
+        self.collection_name = self.COLLECTION_NAME
+        self.collection = mongodb[self.COLLECTION_NAME]
         self._designators_cache = {}
         self._cache_loaded = False
-        
-        # Ensure collection exists and has necessary indexes
-        if self.collection_name not in self.db.list_collection_names():
-            self.db.create_collection(self.collection_name)
-            self.db[self.collection_name].create_index("modeS", unique=True)
     
     def _load_icao_designators(self):
         """Load ICAO type designators into cache"""

@@ -69,6 +69,7 @@ class CrawlerActivityItem(BaseModel):
     registration: Optional[str] = None
     aircraft_type: Optional[str] = None
     crawl_reason: Optional[str] = None  # Why the aircraft was queued for crawling
+    query_count: int = 1  # Number of sources queried (logs only exist when >= 2)
 
 
 class CrawlerActivityResponse(BaseModel):
