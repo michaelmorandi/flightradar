@@ -22,11 +22,9 @@ def create_updater(config, mongodb=None):
 def ensure_db_indexes(app):
     """Make sure database indexes are correctly configured"""
     if hasattr(app.state, 'mongodb') and app.state.mongodb is not None:
-        from .data.repositories.mongodb_repository import MongoDBRepository
-        # Create a temporary repository to ensure indexes
-        repo = MongoDBRepository(app.state.mongodb)
-        # Force index check/creation
-        repo._ensure_indexes()
+        from .data.schema import ensure_schema
+        # Ensure all collections and indexes exist
+        ensure_schema(app.state.mongodb)
         logger.info("MongoDB indexes have been verified and updated if needed")
 
 def configure_scheduling(app: FastAPI, conf: Config):

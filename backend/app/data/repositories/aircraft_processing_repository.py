@@ -103,10 +103,11 @@ class AircraftProcessingRepository:
                 "$or": [
                     # New aircraft (no attempts yet)
                     {"query_attempts": 0},
-                    # Not found failures under max attempts
+                    # Not found failures under max attempts (with 6h cooldown between retries)
                     {
                         "failure_type": FailureType.NOT_FOUND.value,
-                        "query_attempts": {"$lt": self.max_attempts}
+                        "query_attempts": {"$lt": self.max_attempts},
+                        "last_attempt_time": {"$lt": datetime.now() - timedelta(hours=6)}
                     },
                     # Service errors that have cooled down (reset attempts to retry)
                     {
@@ -242,9 +243,14 @@ class AircraftProcessingRepository:
             max_attempts = self.max_attempts
 
         try:
+            # Only delete exhausted not_found records older than 24h.
+            # Younger records are kept as tombstones to prevent
+            # IncompleteAircraftManager from re-queueing the aircraft.
+            expiry_threshold = datetime.now() - timedelta(hours=24)
             result = self.db[self.collection_name].delete_many({
                 "failure_type": FailureType.NOT_FOUND.value,
-                "query_attempts": {"$gte": max_attempts}
+                "query_attempts": {"$gte": max_attempts},
+                "last_attempt_time": {"$lt": expiry_threshold}
             })
 
             if result.deleted_count > 0:
