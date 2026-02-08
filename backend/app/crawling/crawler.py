@@ -28,7 +28,7 @@ class CrawlActivity:
     """Record of a single aircraft fetch attempt"""
     icao24: str
     timestamp: datetime
-    status: str  # 'success', 'partial', 'not_found', 'service_error'
+    status: str  # 'success', 'merged', 'partial', 'not_found', 'service_error'
     source: Optional[str] = None
     registration: Optional[str] = None
     aircraft_type: Optional[str] = None
@@ -323,7 +323,12 @@ class AirplaneCrawler:
                         # Found data (complete or partial) - save it
                         if self.aircraft_repo.insert_aircraft(crawl_result.aircraft):
                             self.processing_repo.remove_aircraft(icao24)
-                            status = 'success' if crawl_result.aircraft.is_complete_with_operator() else 'partial'
+                            if crawl_result.aircraft.is_complete_with_operator():
+                                status = 'success'
+                            elif '+' in (crawl_result.aircraft.source or ''):
+                                status = 'merged'
+                            else:
+                                status = 'partial'
                             self._record_activity(icao24, status, crawl_result.aircraft, crawl_reason, query_count)
                             logger.info(f"Successfully processed aircraft: {icao24}")
                         else:

@@ -317,10 +317,8 @@ const arrivalAirport = computed(() => {
 .valueText {
   font-size: 0.6em;
   text-transform: uppercase;
-  color: rgb(100, 100, 100);
   position: absolute;
   top: 0px;
   left: 0px;
-  border: 1px solid;
 }
 </style>

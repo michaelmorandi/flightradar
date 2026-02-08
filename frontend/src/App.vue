@@ -26,6 +26,14 @@
           <i class="bi bi-card-list"></i>
           <span>Flight history</span>
         </a>
+        <button
+          class="mil-toggle"
+          :class="{ active: militaryStore.militaryOnly }"
+          @click="militaryStore.toggleFilter()"
+        >
+          <i class="bi bi-shield-fill"></i>
+          <span>Military</span>
+        </button>
       </div>
     </nav>
     <div v-show="viewStore.currentView === 'live'">
@@ -43,6 +51,7 @@ import { useRoute } from 'vue-router';
 import { Tooltip } from 'bootstrap';
 import { useViewStore } from './stores/viewStore';
 import { useAircraftStore } from './stores/aircraft';
+import { useMilitaryStore } from './stores/militaryStore';
 import LiveRadar from './views/LiveRadar.vue';
 import FlightLog from './views/FlightLog.vue';
 
@@ -58,6 +67,7 @@ export default defineComponent({
     const route = useRoute();
     const viewStore = useViewStore();
     const aircraftStore = useAircraftStore();
+    const militaryStore = useMilitaryStore();
 
     const liveCount = computed(() => aircraftStore.activeAircraftList.length);
 
@@ -71,7 +81,7 @@ export default defineComponent({
       document.title = count > 0 ? `Flightradar (${count})` : 'Flightradar';
     }, { immediate: true });
 
-    return { viewStore, isDashboardRoute };
+    return { viewStore, militaryStore, isDashboardRoute };
   },
 
   mounted() {
@@ -93,44 +103,86 @@ export default defineComponent({
 }
 
 .app-nav {
-  background: #fff;
-  border-bottom: 1px solid #eee;
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 500;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 24px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   padding: 0;
-  position: sticky;
-  top: 0;
-  z-index: 100;
 }
 
 .nav-tabs {
   display: inline-flex;
+  align-items: center;
   gap: 0;
-  padding: 8px 12px;
+  padding: 6px 8px;
+  border-bottom: none;
 }
 
 .nav-tab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 20px;
+  padding: 7px 18px;
   text-decoration: none;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 500;
-  color: #666;
-  border-radius: 6px;
+  color: #555;
+  border-radius: 18px;
   transition: all 0.15s ease;
 }
 
 .nav-tab:hover {
-  color: #333;
-  background: #f5f5f5;
+  color: #222;
+  background: rgba(0, 0, 0, 0.06);
 }
 
 .nav-tab.active {
   color: #111;
-  background: #f0f0f0;
+  background: rgba(0, 0, 0, 0.09);
 }
 
 .nav-tab i {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+}
+
+.mil-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  margin-left: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: transparent;
+  border-radius: 16px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #555;
+  transition: all 0.15s ease;
+}
+
+.mil-toggle:hover {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+.mil-toggle.active {
+  background: rgba(0, 0, 0, 0.75);
+  border-color: transparent;
+  color: #fff;
+}
+
+.mil-toggle.active:hover {
+  background: rgba(0, 0, 0, 0.82);
+}
+
+.mil-toggle i {
+  font-size: 0.72rem;
 }
 </style>

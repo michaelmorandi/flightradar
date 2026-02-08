@@ -3,15 +3,6 @@
     <div class="filter-bar">
       <button
         type="button"
-        class="filter-chip"
-        @click="toggleMilitaryFilter"
-        :class="{ 'active': militaryFilter }"
-      >
-        <i class="bi bi-shield-fill"></i>
-        Military
-      </button>
-      <button
-        type="button"
         class="filter-chip refresh-button"
         @click="loadData"
         :disabled="loading"
@@ -81,16 +72,18 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import { Flight } from '@/model/backendModel';
 import { getFlightApiService } from '@/services/flightApiService';
+import { useMilitaryStore } from '@/stores/militaryStore';
 import FlightlogEntry from '@/components/flights/FlightlogEntry.vue';
 
 const PAGE_SIZE = 50;
 
+const militaryStore = useMilitaryStore();
+
 const flights = ref<Array<Flight>>([]);
 const loading = ref(false);
-const militaryFilter = ref(false);
 const currentPage = ref(1);
 const totalFlights = ref(0);
 const totalPages = ref(0);
@@ -102,7 +95,7 @@ const loadData = async () => {
   try {
     // Pass undefined when filter is off to get all flights (mil and non-mil)
     // excludeLive=true filters out flights with last contact within 5 minutes
-    const mil = militaryFilter.value ? true : undefined;
+    const mil = militaryStore.militaryOnly ? true : undefined;
     const response = await apiService.getFlights(PAGE_SIZE, mil, currentPage.value, true);
     flights.value = response.flights;
     totalFlights.value = response.total;
@@ -118,12 +111,11 @@ const loadData = async () => {
   }
 };
 
-const toggleMilitaryFilter = () => {
-  militaryFilter.value = !militaryFilter.value;
-  currentPage.value = 1; // Reset to first page when filter changes
+watch(() => militaryStore.militaryOnly, () => {
+  currentPage.value = 1;
   flights.value = [];
   loadData();
-};
+});
 
 const goToPage = (page: number) => {
   if (page >= 1 && page <= totalPages.value && page !== currentPage.value) {

@@ -43,16 +43,12 @@
         <h3 class="subsection-title">Processing Queue</h3>
         <div class="queue-stats-grid">
           <div class="queue-stat">
+            <div class="stat-number eligible">{{ stats.queue_eligible }}</div>
+            <div class="stat-label">Eligible</div>
+          </div>
+          <div class="queue-stat">
             <div class="stat-number">{{ stats.queue_total }}</div>
             <div class="stat-label">Total in Queue</div>
-          </div>
-          <div class="queue-stat">
-            <div class="stat-number pending">{{ stats.queue_pending }}</div>
-            <div class="stat-label">Pending</div>
-          </div>
-          <div class="queue-stat">
-            <div class="stat-number in-progress">{{ stats.queue_in_progress }}</div>
-            <div class="stat-label">In Progress</div>
           </div>
         </div>
       </div>
@@ -258,8 +254,7 @@ interface SourceStatus {
 interface CrawlerStats {
   enabled: boolean;
   queue_total: number;
-  queue_pending: number;
-  queue_in_progress: number;
+  queue_eligible: number;
   not_found_failures: number;
   service_error_failures: number;
   max_attempts_reached: number;
@@ -270,7 +265,7 @@ interface CrawlerStats {
 interface ActivityItem {
   icao24: string;
   timestamp: string;
-  status: 'success' | 'partial' | 'not_found' | 'service_error';
+  status: 'success' | 'merged' | 'partial' | 'not_found' | 'service_error';
   source: string | null;
   registration: string | null;
   aircraft_type: string | null;
@@ -308,8 +303,7 @@ const refreshInterval = 5000; // 5 seconds
 const stats = ref<CrawlerStats>({
   enabled: false,
   queue_total: 0,
-  queue_pending: 0,
-  queue_in_progress: 0,
+  queue_eligible: 0,
   not_found_failures: 0,
   service_error_failures: 0,
   max_attempts_reached: 0,
@@ -380,6 +374,7 @@ const formatTime = (isoString: string) => {
 const getStatusLabel = (status: string) => {
   switch (status) {
     case 'success': return 'Found';
+    case 'merged': return 'Merged';
     case 'partial': return 'Partial';
     case 'not_found': return 'Not Found';
     case 'service_error': return 'Error';
@@ -667,7 +662,7 @@ onUnmounted(() => {
 /* Queue Stats */
 .queue-stats-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 16px;
 }
 
@@ -684,11 +679,7 @@ onUnmounted(() => {
   color: #333;
 }
 
-.queue-stat .stat-number.pending {
-  color: #ff9800;
-}
-
-.queue-stat .stat-number.in-progress {
+.queue-stat .stat-number.eligible {
   color: #2196f3;
 }
 
@@ -906,6 +897,10 @@ onUnmounted(() => {
   border-left: 3px solid #4caf50;
 }
 
+.activity-item.merged {
+  border-left-color: #2196f3;
+}
+
 .activity-item.partial {
   border-left-color: #ff9800;
 }
@@ -942,6 +937,11 @@ onUnmounted(() => {
 .status-badge.success {
   background: #e8f5e9;
   color: #2e7d32;
+}
+
+.status-badge.merged {
+  background: #e3f2fd;
+  color: #1565c0;
 }
 
 .status-badge.partial {
@@ -1127,6 +1127,11 @@ onUnmounted(() => {
   color: #2e7d32;
 }
 
+.log-status.merged {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
 .log-status.partial {
   background: #fff3e0;
   color: #ef6c00;
@@ -1252,7 +1257,7 @@ onUnmounted(() => {
 /* Responsive */
 @media (max-width: 600px) {
   .queue-stats-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .section-header {

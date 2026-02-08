@@ -93,6 +93,7 @@ class SSENotifier:
         for flight_id, pos in all_cached_flights.items():
             if str(flight_id) in changed_flight_ids:
                 position_data = {
+                    "icao": pos.icao24,
                     "lat": pos.lat,
                     "lon": pos.lon,
                     "alt": pos.alt,
@@ -110,6 +111,7 @@ class SSENotifier:
             for flight_id, pos in all_cached_flights.items():
                 if count < 50:  # Limit to 50 positions
                     position_data = {
+                        "icao": pos.icao24,
                         "lat": pos.lat,
                         "lon": pos.lon,
                         "alt": pos.alt,

@@ -8,6 +8,7 @@
 
 import { watch, onUnmounted, type Ref, shallowRef } from 'vue';
 import { useAircraftStore, useFlightHistoryStore, type MapAircraftView, type HistoryPosition } from '@/stores/aircraft';
+import { useMilitaryStore } from '@/stores/militaryStore';
 import { getDataIngestionService } from '@/services/dataIngestionService';
 import { MarkerManager } from '@/components/map/MarkerManager';
 import { FlightPath } from '@/components/map/flightPath';
@@ -34,6 +35,7 @@ export function useMapRenderer(
 ) {
   const aircraftStore = useAircraftStore();
   const historyStore = useFlightHistoryStore();
+  const militaryStore = useMilitaryStore();
   const dataService = getDataIngestionService();
 
   // Track created markers for cleanup
@@ -72,16 +74,20 @@ export function useMapRenderer(
 
     const manager = markerManager.value;
     const currentMarkers = manager.getAllMarkers();
+    const filterMil = militaryStore.militaryOnly;
 
-    // Remove markers not in new view
+    // Remove markers not in new view or filtered out
     for (const [id] of currentMarkers) {
-      if (!view.has(id)) {
+      const data = view.get(id);
+      if (!data || (filterMil && !militaryStore.isMilitary(data.icao24))) {
         manager.removeMarker(id);
       }
     }
 
     // Add/update markers from view
     for (const [id, data] of view) {
+      if (filterMil && !militaryStore.isMilitary(data.icao24)) continue;
+
       const coords = {
         lat: data.lat,
         lng: data.lng,
@@ -193,10 +199,10 @@ export function useMapRenderer(
     lastSelectedFlightId.value = null;
   }
 
-  // Watch the mapView for changes and update markers
+  // Watch the mapView and military filter for changes and update markers
   const stopMapViewWatch = watch(
-    () => aircraftStore.mapView,
-    (newView) => {
+    [() => aircraftStore.mapView, () => militaryStore.militaryOnly],
+    ([newView]) => {
       updateMarkers(newView);
     },
     { immediate: false }

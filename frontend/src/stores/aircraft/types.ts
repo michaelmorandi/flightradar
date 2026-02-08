@@ -105,6 +105,9 @@ export interface MapAircraftView {
   /** Flight ID */
   id: string;
 
+  /** 24-bit ICAO transponder address */
+  icao24: string;
+
   /** Latitude */
   lat: number;
 

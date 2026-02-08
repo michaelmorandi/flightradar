@@ -53,7 +53,6 @@ const onHover = async () => {
 .airport-code {
   position: relative;
   cursor: help;
-  border-bottom: 1px dotted #888;
 }
 
 .airport-popover {

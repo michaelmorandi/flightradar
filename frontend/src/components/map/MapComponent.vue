@@ -167,9 +167,8 @@ defineExpose({
 
 <style scoped>
 #mapContainer {
-  height: calc(100vh - 44px);
-  width: 100%;
-  position: relative;
+  position: fixed;
+  inset: 0;
   overflow: hidden;
 }
 </style>

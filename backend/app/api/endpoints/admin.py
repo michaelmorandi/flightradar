@@ -51,8 +51,7 @@ class CrawlerStats(BaseModel):
     """Crawler processing queue statistics."""
     enabled: bool
     queue_total: int
-    queue_pending: int
-    queue_in_progress: int
+    queue_eligible: int
     not_found_failures: int
     service_error_failures: int
     max_attempts_reached: int
@@ -64,7 +63,7 @@ class CrawlerActivityItem(BaseModel):
     """A single crawler activity entry."""
     icao24: str
     timestamp: str
-    status: str  # 'success', 'partial', 'not_found', 'service_error'
+    status: str  # 'success', 'merged', 'partial', 'not_found', 'service_error'
     source: Optional[str] = None
     registration: Optional[str] = None
     aircraft_type: Optional[str] = None
@@ -362,8 +361,7 @@ async def get_crawler_stats(
     return CrawlerStats(
         enabled=crawler_enabled,
         queue_total=queue_stats["total_count"],
-        queue_pending=queue_stats["zero_attempts"],
-        queue_in_progress=queue_stats["in_progress"],
+        queue_eligible=queue_stats["eligible"],
         not_found_failures=queue_stats["not_found_failures"],
         service_error_failures=queue_stats["service_error_failures"],
         max_attempts_reached=queue_stats["max_attempts_reached"],

@@ -264,8 +264,9 @@ class AircraftProcessingRepository:
     def get_stats(self) -> dict:
         """Get detailed statistics about the processing queue"""
         try:
+            reset_threshold = datetime.now() - timedelta(hours=self.service_error_reset_hours)
+
             total = self.db[self.collection_name].count_documents({})
-            zero_attempts = self.db[self.collection_name].count_documents({"query_attempts": 0})
             not_found_count = self.db[self.collection_name].count_documents({
                 "failure_type": FailureType.NOT_FOUND.value
             })
@@ -277,10 +278,33 @@ class AircraftProcessingRepository:
                 "query_attempts": {"$gte": self.max_attempts}
             })
 
+            # Count aircraft eligible for processing (mirrors get_aircraft_for_processing query)
+            eligible = self.db[self.collection_name].count_documents({
+                "$or": [
+                    {"query_attempts": 0},
+                    {
+                        "failure_type": FailureType.NOT_FOUND.value,
+                        "query_attempts": {"$lt": self.max_attempts},
+                        "last_attempt_time": {"$lt": datetime.now() - timedelta(hours=6)}
+                    },
+                    {
+                        "failure_type": FailureType.SERVICE_ERROR.value,
+                        "last_attempt_time": {"$lt": reset_threshold}
+                    },
+                    {
+                        "failure_type": {"$exists": False},
+                        "query_attempts": {"$lt": self.max_attempts}
+                    },
+                    {
+                        "failure_type": FailureType.NONE.value,
+                        "query_attempts": {"$lt": self.max_attempts}
+                    }
+                ]
+            })
+
             return {
                 "total_count": total,
-                "zero_attempts": zero_attempts,
-                "in_progress": total - zero_attempts,
+                "eligible": eligible,
                 "not_found_failures": not_found_count,
                 "service_error_failures": service_error_count,
                 "max_attempts_reached": max_attempts_reached
@@ -289,8 +313,7 @@ class AircraftProcessingRepository:
             logger.error(f"Failed to get stats: {e}")
             return {
                 "total_count": 0,
-                "zero_attempts": 0,
-                "in_progress": 0,
+                "eligible": 0,
                 "not_found_failures": 0,
                 "service_error_failures": 0,
                 "max_attempts_reached": 0

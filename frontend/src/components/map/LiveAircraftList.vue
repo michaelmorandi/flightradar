@@ -76,11 +76,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useAircraftStore } from '@/stores/aircraft';
+import { useMilitaryStore } from '@/stores/militaryStore';
 import { getAircraftDetailsService } from '@/services/aircraftDetailsService';
 import { getFlightApiService } from '@/services/flightApiService';
 import { silhouetteUrl } from '@/components/aircraftIcon';
 
 const aircraftStore = useAircraftStore();
+const militaryStore = useMilitaryStore();
 const aircraftDetailsService = getAircraftDetailsService();
 const flightApiService = getFlightApiService();
 
@@ -175,16 +177,22 @@ watch(
 );
 
 const filteredAircraft = computed(() => {
-  if (!searchQuery.value.trim()) {
-    return activeAircraft.value;
+  let list = activeAircraft.value;
+
+  if (militaryStore.militaryOnly) {
+    list = list.filter(ac => militaryStore.isMilitary(ac.icao24));
   }
 
-  const query = searchQuery.value.toLowerCase();
-  return activeAircraft.value.filter((aircraft) => {
-    const callsign = aircraft.callsign?.toLowerCase() || '';
-    const icao = aircraft.icao24?.toLowerCase() || '';
-    return callsign.includes(query) || icao.includes(query);
-  });
+  if (searchQuery.value.trim()) {
+    const query = searchQuery.value.toLowerCase();
+    list = list.filter((aircraft) => {
+      const callsign = aircraft.callsign?.toLowerCase() || '';
+      const icao = aircraft.icao24?.toLowerCase() || '';
+      return callsign.includes(query) || icao.includes(query);
+    });
+  }
+
+  return list;
 });
 
 const selectedFlightId = computed(() => aircraftStore.selectedFlightId);

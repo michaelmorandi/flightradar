@@ -217,6 +217,7 @@ export function toMapView(aircraft: AircraftState): MapAircraftView | null {
 
   return {
     id: aircraft.id,
+    icao24: aircraft.icao24,
     lat: aircraft.lat,
     lng: aircraft.lon, // HERE Maps uses 'lng'
     heading,

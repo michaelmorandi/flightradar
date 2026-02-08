@@ -298,6 +298,10 @@ def _format_position(position_data, include_gs: bool = True) -> dict:
         if track is not None:
             formatted["track"] = track
 
+    icao24 = position_data.get("icao24") if isinstance(position_data, dict) else getattr(position_data, "icao24", None)
+    if icao24:
+        formatted["icao"] = icao24
+
     category = position_data.get("category") if isinstance(position_data, dict) else getattr(position_data, "category", None)
     if category is not None:
         # Convert category string to compact numeric representation
@@ -530,3 +534,5 @@ def get_all_positions(
             positions[icao24] = [[pos["lat"], pos["lon"], pos["alt"]]]
 
     return positions
+
+
