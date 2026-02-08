@@ -1,80 +1,57 @@
 <template>
-  <div class="live-aircraft-list" :class="{ 'collapsed': isMobileCollapsed, 'sidebar-collapsed': isSidebarCollapsed }">
-    <!-- Collapse toggle button (visible when sidebar is collapsed) -->
-    <button
-      v-if="isSidebarCollapsed"
-      class="sidebar-expand-btn"
-      @click="toggleSidebarCollapse"
-      title="Show aircraft list"
-    >
-      <i class="bi bi-chevron-right"></i>
-    </button>
+  <div class="live-aircraft-list" :class="{ 'list-collapsed': isListCollapsed }">
+    <div class="search-bar">
+      <i class="bi bi-search search-icon"></i>
+      <input
+        type="text"
+        class="search-input"
+        placeholder="Search..."
+        v-model="searchQuery"
+      />
+      <button
+        class="collapse-btn"
+        @click="toggleListCollapse"
+        :title="isListCollapsed ? 'Expand list' : 'Collapse list'"
+      >
+        <i :class="isListCollapsed ? 'bi bi-chevron-down' : 'bi bi-chevron-up'"></i>
+      </button>
+    </div>
 
-    <!-- Main sidebar content -->
-    <template v-if="!isSidebarCollapsed">
-      <div class="list-header">
-        <button
-          class="mobile-toggle"
-          @click="toggleMobileCollapse"
-          v-if="isMobile"
-        >
-          <i :class="isMobileCollapsed ? 'bi bi-chevron-up' : 'bi bi-chevron-down'"></i>
-        </button>
-        <button
-          class="sidebar-collapse-btn"
-          @click="toggleSidebarCollapse"
-          title="Hide aircraft list"
-        >
-          <i class="bi bi-chevron-left"></i>
-        </button>
-      </div>
-
-      <div class="search-bar" v-if="!isMobileCollapsed">
-        <input
-          type="text"
-          class="search-input"
-          placeholder="Search by callsign or ICAO..."
-          v-model="searchQuery"
-        />
-        <i class="bi bi-search search-icon"></i>
-      </div>
-
-      <div class="list-content" v-if="!isMobileCollapsed">
-        <div
-          v-for="aircraft in filteredAircraft"
-          :key="aircraft.flightId"
-          class="aircraft-item"
-          :class="{ 'selected': aircraft.flightId === selectedFlightId }"
-          @click="selectAircraft(aircraft.flightId)"
-        >
-          <div class="aircraft-silhouette">
-            <img
-              :src="getSilhouetteSrc(aircraft.icaoType)"
-              :alt="aircraft.icaoType || 'Aircraft'"
-              @error="onImageError"
-            />
+    <div class="list-content" v-show="!isListCollapsed">
+      <div
+        v-for="aircraft in filteredAircraft"
+        :key="aircraft.flightId"
+        class="aircraft-item"
+        :class="{ 'selected': aircraft.flightId === selectedFlightId }"
+        @click="selectAircraft(aircraft.flightId)"
+      >
+        <div class="aircraft-silhouette">
+          <img
+            :src="getSilhouetteSrc(aircraft.icaoType)"
+            :alt="aircraft.icaoType || 'Aircraft'"
+            @error="onImageError"
+          />
+        </div>
+        <div class="aircraft-info">
+          <div class="callsign">
+            {{ aircraft.callsign || aircraft.icao24 }}
           </div>
-          <div class="aircraft-info">
-            <div class="callsign">
-              {{ aircraft.callsign || aircraft.icao24 }}
-            </div>
-            <div class="operator" v-if="aircraft.operator">
-              {{ aircraft.operator }}
-            </div>
+          <div class="operator" v-if="aircraft.operator">
+            {{ aircraft.operator }}
           </div>
         </div>
-
-        <div v-if="filteredAircraft.length === 0" class="empty-state">
-          <i class="bi bi-search"></i>
-          <p>No aircraft found</p>
-        </div>
       </div>
-    </template>
+
+      <div v-if="filteredAircraft.length === 0" class="empty-state">
+        <i class="bi bi-search"></i>
+        <p>No aircraft found</p>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useAircraftStore } from '@/stores/aircraft';
 import { useMilitaryStore } from '@/stores/militaryStore';
 import { getAircraftDetailsService } from '@/services/aircraftDetailsService';
@@ -89,32 +66,10 @@ const flightApiService = getFlightApiService();
 const emit = defineEmits(['aircraftSelected']);
 
 const searchQuery = ref('');
-const isMobile = ref(false);
-const isMobileCollapsed = ref(false);
-const isSidebarCollapsed = ref(false);
+const isListCollapsed = ref(false);
 
-const checkMobile = () => {
-  isMobile.value = window.innerWidth < 768;
-  if (isMobile.value) {
-    isMobileCollapsed.value = true;
-  }
-};
-
-const toggleSidebarCollapse = () => {
-  isSidebarCollapsed.value = !isSidebarCollapsed.value;
-};
-
-onMounted(() => {
-  checkMobile();
-  window.addEventListener('resize', checkMobile);
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', checkMobile);
-});
-
-const toggleMobileCollapse = () => {
-  isMobileCollapsed.value = !isMobileCollapsed.value;
+const toggleListCollapse = () => {
+  isListCollapsed.value = !isListCollapsed.value;
 };
 
 const getSilhouetteSrc = (icaoType?: string): string => {
@@ -204,144 +159,95 @@ const selectAircraft = (flightId: string) => {
 
 <style scoped>
 .live-aircraft-list {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
+  position: fixed;
+  left: 10px;
+  top: 10px;
+  bottom: 10px;
   width: 240px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   z-index: 400;
-  transition: all 0.3s ease;
+  transition: bottom 0.3s ease;
+  overflow: hidden;
 }
 
-.live-aircraft-list.sidebar-collapsed {
-  width: auto;
-  background: transparent;
-  backdrop-filter: none;
-  box-shadow: none;
-}
-
-.sidebar-collapse-btn {
-  background: rgba(255, 255, 255, 0.8);
-  border: none;
-  padding: 2px 4px;
-  cursor: pointer;
-  color: #666;
-  font-size: 0.8rem;
-  border-radius: 4px;
-  transition: background-color 0.2s;
-}
-
-.sidebar-collapse-btn:hover {
-  background: #f0f0f0;
-  color: #333;
-}
-
-.sidebar-expand-btn {
-  position: absolute;
-  top: 0;
-  left: 0;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  border: none;
-  padding: 12px 8px;
-  cursor: pointer;
-  color: #666;
-  font-size: 1rem;
-  border-radius: 0 0 8px 0;
-  box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.1);
-  transition: all 0.2s;
-}
-
-.sidebar-expand-btn:hover {
-  background: #fff;
-  color: #333;
-  padding-right: 12px;
-}
-
-.live-aircraft-list.collapsed {
-  height: auto;
+.live-aircraft-list.list-collapsed {
   bottom: auto;
-  width: 100%;
-  left: 0;
-  right: 0;
-  top: auto;
-  bottom: 0;
-}
-
-.list-header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 4px;
-  background: transparent;
-}
-
-.mobile-toggle {
-  background: none;
-  border: none;
-  padding: 4px;
-  cursor: pointer;
-  color: #666;
-  font-size: 1.2rem;
 }
 
 .search-bar {
-  position: relative;
-  padding: 8px 12px;
-  border-bottom: 1px solid #e0e0e0;
-  background: #fff;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.search-icon {
+  color: #999;
+  font-size: 0.8rem;
+  flex-shrink: 0;
 }
 
 .search-input {
-  width: 100%;
-  padding: 8px 12px 8px 36px;
-  border: 1px solid #e0e0e0;
-  border-radius: 20px;
-  font-size: 0.875rem;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 14px;
+  font-size: 0.8rem;
   outline: none;
+  background: rgba(0, 0, 0, 0.03);
   transition: border-color 0.2s;
 }
 
 .search-input:focus {
   border-color: #0d6efd;
+  background: #fff;
 }
 
-.search-icon {
-  position: absolute;
-  left: 24px;
-  top: 50%;
-  transform: translateY(-50%);
+.collapse-btn {
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  cursor: pointer;
   color: #999;
-  pointer-events: none;
+  font-size: 0.75rem;
+  border-radius: 8px;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.collapse-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #333;
 }
 
 .list-content {
   flex: 1;
   overflow-y: auto;
-  background: #fafafa;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .aircraft-item {
   display: flex;
   align-items: center;
   padding: 8px 12px;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   cursor: pointer;
   transition: background-color 0.15s ease;
-  background: #fff;
 }
 
 .aircraft-item:hover {
-  background: #f8f9fa;
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .aircraft-item.selected {
-  background: #e7f3ff;
+  background: rgba(13, 110, 253, 0.08);
   border-left: 3px solid #0d6efd;
 }
 
@@ -410,20 +316,16 @@ const selectAircraft = (flightId: string) => {
 /* Mobile styles */
 @media (max-width: 767px) {
   .live-aircraft-list {
-    width: 100%;
-    left: 0;
-    right: 0;
+    width: calc(100% - 20px);
+    left: 10px;
+    right: 10px;
     top: auto;
-    bottom: 0;
+    bottom: 10px;
     max-height: 60vh;
   }
 
-  .live-aircraft-list.collapsed {
-    max-height: 60px;
-  }
-
   .list-content {
-    max-height: calc(60vh - 120px);
+    max-height: calc(60vh - 60px);
   }
 }
 </style>

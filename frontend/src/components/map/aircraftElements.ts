@@ -54,6 +54,7 @@ export class AircraftIcon {
 
   public static readonly INACTIVE_COLOR = '250, 255, 255';
   public static readonly HIGHLIGHT_COLOR = '250, 127, 0';
+  public static readonly MILITARY_COLOR = '144, 190, 109';
 
   constructor(
     private iconSvgMap: Map<string, SVGElement>,

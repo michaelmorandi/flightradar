@@ -93,8 +93,25 @@ export function useMapRenderer(
         lng: data.lng,
         heading: data.heading,
       };
+      const isNew = !manager.hasMarker(id);
       manager.updateMarker(id, coords, data.groundSpeed, data.callsign, data.category);
+
+      // Apply military color to newly created markers (skip selected flight)
+      if (isNew && id !== lastSelectedFlightId.value && militaryStore.isMilitary(data.icao24)) {
+        manager.setMarkerColor(id, AircraftIcon.MILITARY_COLOR);
+      }
     }
+  }
+
+  /**
+   * Get the correct resting color for a flight (military green or default white).
+   */
+  function getInactiveColor(flightId: string): string {
+    const data = aircraftStore.mapView.get(flightId);
+    if (data && militaryStore.isMilitary(data.icao24)) {
+      return AircraftIcon.MILITARY_COLOR;
+    }
+    return AircraftIcon.INACTIVE_COLOR;
   }
 
   /**
@@ -109,7 +126,7 @@ export function useMapRenderer(
     // Reset color of previously selected marker
     if (previousFlightId && previousFlightId !== flightId) {
       if (manager.hasMarker(previousFlightId)) {
-        manager.setMarkerColor(previousFlightId, AircraftIcon.INACTIVE_COLOR);
+        manager.setMarkerColor(previousFlightId, getInactiveColor(previousFlightId));
       }
 
       // Clean up previous flight path
@@ -216,7 +233,7 @@ export function useMapRenderer(
       if (markerManager.value) {
         if (oldFlightId && oldFlightId !== newFlightId) {
           if (markerManager.value.hasMarker(oldFlightId)) {
-            markerManager.value.setMarkerColor(oldFlightId, AircraftIcon.INACTIVE_COLOR);
+            markerManager.value.setMarkerColor(oldFlightId, getInactiveColor(oldFlightId));
           }
         }
         if (newFlightId && newFlightId !== oldFlightId) {
