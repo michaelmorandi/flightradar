@@ -33,6 +33,7 @@
         >
           <i class="bi bi-shield-fill"></i>
           <span>Military</span>
+          <span v-if="militaryCount > 0" class="mil-count">{{ militaryCount }}</span>
         </button>
       </div>
     </nav>
@@ -71,6 +72,10 @@ export default defineComponent({
 
     const liveCount = computed(() => aircraftStore.activeAircraftList.length);
 
+    const militaryCount = computed(() =>
+      aircraftStore.activeAircraftList.filter(ac => militaryStore.isMilitary(ac.icao24)).length
+    );
+
     // Check if current route is a dashboard route
     const isDashboardRoute = computed(() => {
       return route.path.startsWith('/dashboard');
@@ -81,7 +86,7 @@ export default defineComponent({
       document.title = count > 0 ? `Flightradar (${count})` : 'Flightradar';
     }, { immediate: true });
 
-    return { viewStore, militaryStore, isDashboardRoute };
+    return { viewStore, militaryStore, militaryCount, isDashboardRoute };
   },
 
   mounted() {
@@ -184,5 +189,23 @@ export default defineComponent({
 
 .mil-toggle i {
   font-size: 0.72rem;
+}
+
+.mil-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.12);
+  line-height: 1;
+}
+
+.mil-toggle.active .mil-count {
+  background: rgba(255, 255, 255, 0.2);
 }
 </style>

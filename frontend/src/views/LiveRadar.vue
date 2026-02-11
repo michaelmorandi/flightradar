@@ -36,8 +36,9 @@ import MapComposition from '@/components/map/MapComposition.vue';
 import LiveAircraftList from '@/components/map/LiveAircraftList.vue';
 import { config } from '@/config';
 import { Offcanvas } from 'bootstrap';
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { useAircraftStore } from '@/stores/aircraft';
+import { useMilitaryStore } from '@/stores/militaryStore';
 
 //Reference to the sidebar HTML div
 const sidebar = ref();
@@ -51,6 +52,7 @@ const isMobile = ref();
 const selectedFlight = ref<string>();
 
 const aircraftStore = useAircraftStore();
+const militaryStore = useMilitaryStore();
 
 onMounted(() => {
   isMobile.value = window.innerWidth < 768;
@@ -63,6 +65,24 @@ onMounted(() => {
       }
       aircraftStore.clearSelection();
     });
+  }
+});
+
+// When military filter is activated, hide detail pane if selected aircraft is not military
+watch(() => militaryStore.militaryOnly, (active) => {
+  if (active && selectedFlight.value) {
+    const ac = aircraftStore.getAircraftById(selectedFlight.value);
+    if (ac && !militaryStore.isMilitary(ac.icao24)) {
+      // Programmatically hide the offcanvas — this triggers the hide.bs.offcanvas
+      // event which already handles unselectFlight + clearSelection
+      const sidebarEl = document.getElementById('sidebar');
+      if (sidebarEl) {
+        const instance = Offcanvas.getInstance(sidebarEl);
+        if (instance) {
+          instance.hide();
+        }
+      }
+    }
   }
 });
 

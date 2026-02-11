@@ -51,6 +51,7 @@ export class AircraftIcon {
   private svgDataCache: Map<string, CachedSvgData> = new Map(); // Optimized cache with pre-computed element lists
   private visibleElementsCache: Map<string, VisibleSvgElements> = new Map(); // Track visible SVG elements for fast updates
   private lastRotationMap: Map<string, number> = new Map(); // Track last rotation to avoid unnecessary updates
+  private pendingColorMap: Map<string, string> = new Map(); // Store color before SVG is cached
 
   public static readonly INACTIVE_COLOR = '250, 255, 255';
   public static readonly HIGHLIGHT_COLOR = '250, 127, 0';
@@ -276,6 +277,11 @@ export class AircraftIcon {
         // Update the cached color
         cachedData.currentColor = color;
       }
+      // Clear any pending color since cache now exists
+      this.pendingColorMap.delete(flightId);
+    } else {
+      // SVG not yet loaded — store for when cacheSvgForFlight runs
+      this.pendingColorMap.set(flightId, color);
     }
   }
 
@@ -306,11 +312,16 @@ export class AircraftIcon {
     this.lastRotationMap.set(flightId, rotation);
   }
 
+  public getPendingColor(flightId: string): string | undefined {
+    return this.pendingColorMap.get(flightId);
+  }
+
   public clearFlightData(flightId: string) {
     this.svgDataCache.delete(flightId);
     this.lastRotationMap.delete(flightId);
     this.callsignMap.delete(flightId);
     this.aircraftTypeMap.delete(flightId);
+    this.pendingColorMap.delete(flightId);
   }
 }
 
@@ -398,8 +409,11 @@ export class AircraftMarker {
       // Apply positioning and optimization styles once
       newSvgElement.style.cssText = `position: absolute; left: ${-scaledWidth / 2}px; top: ${-scaledHeight / 2}px; width: ${scaledWidth}px; height: ${scaledHeight}px; will-change: transform; backface-visibility: hidden;`;
 
+      // Use pending color if one was set before the SVG loaded (e.g. military color)
+      const initialColor = this.aircraftIcon.getPendingColor(this.flightId) || AircraftIcon.INACTIVE_COLOR;
+
       // Cache with optimized structure - this handles all color operations
-      this.aircraftIcon.cacheSvgForFlight(this.flightId, newSvgElement, AircraftIcon.INACTIVE_COLOR);
+      this.aircraftIcon.cacheSvgForFlight(this.flightId, newSvgElement, initialColor);
 
       // Only update visible element if currently attached
       const svgElement = this.iconSvgMap.get(this.flightId);
