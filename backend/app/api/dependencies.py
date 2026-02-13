@@ -5,6 +5,7 @@ from pymongo.database import Database
 from ..data.repositories.aircraft_repository import AircraftRepository
 from ..data.repositories.mongodb_repository import MongoDBRepository
 from ..core.utils.modes_util import ModesUtil
+from ..core.services.airline_service import AirlineService
 from ..config import Config, app_state
 from ..meta import MetaInformation
 from ..auth.models import User
@@ -39,7 +40,15 @@ def get_mongodb_repository(mongodb: MongoDBDep) -> MongoDBRepository:
     """Get MongoDBRepository instance"""
     return MongoDBRepository(mongodb)
 
+# Singleton airline service instance
+_airline_service = AirlineService(_config.DATA_FOLDER)
+
+def get_airline_service() -> AirlineService:
+    """Get AirlineService instance (singleton)"""
+    return _airline_service
+
 ConfigDep = Annotated[Config, Depends(get_config)]
+AirlineServiceDep = Annotated[AirlineService, Depends(get_airline_service)]
 ModesUtilDep = Annotated[ModesUtil, Depends(get_modes_util)]
 MetaInfoDep = Annotated[MetaInformation, Depends(get_meta_info)]
 AircraftRepositoryDep = Annotated[AircraftRepository, Depends(get_aircraft_repository)]

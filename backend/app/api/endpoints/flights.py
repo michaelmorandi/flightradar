@@ -14,7 +14,7 @@ from ..mappers import toFlightDto
 from ..models import FlightDto, PaginatedFlightsResponse, to_datestring
 from ...sse.manager import sse_manager, SSEClient
 from ...sse.notifier import SSENotifier
-from ..dependencies import MetaInfoDep, get_mongodb, MongoDBRepositoryDep, CurrentUserDep
+from ..dependencies import MetaInfoDep, get_mongodb, MongoDBRepositoryDep, CurrentUserDep, AirlineServiceDep
 from ...scheduling import UPDATER_JOB_NAME
 
 # Initialize logging
@@ -94,11 +94,15 @@ def ready(request: Request):
 )
 async def get_flights(
     repository: MongoDBRepositoryDep,
+    airline_service: AirlineServiceDep,
     current_user: CurrentUserDep,
     mil: Optional[bool] = Query(None, description="Filter by military status: true for military only, false for civilian only, omit for all"),
     limit: Optional[int] = Query(None, description="Maximum number of flights to return per page"),
     page: Optional[int] = Query(1, description="Page number (1-indexed)", ge=1),
-    exclude_live: bool = Query(False, description="Exclude flights with last contact within 5 minutes")
+    exclude_live: bool = Query(False, description="Exclude flights with last contact within 5 minutes"),
+    icao24: Optional[str] = Query(None, description="Filter by aircraft ICAO24 hex address"),
+    airline: Optional[str] = Query(None, description="Filter by airline ICAO 3-letter code"),
+    q: Optional[str] = Query(None, description="Search by callsign prefix or airline name")
 ):
     """
     Get past flights from the database with pagination.
@@ -109,14 +113,25 @@ async def get_flights(
     # Apply limit (default and max limit is MAX_FLIGHTS_LIMIT)
     applied_limit = min(limit, MAX_FLIGHTS_LIMIT) if limit is not None else MAX_FLIGHTS_LIMIT
 
-    # Fetch flights from database with optional military filter and pagination
+    # Resolve search query: find matching airline ICAO codes from airline name search
+    search_airline_codes = None
+    if q and q.strip():
+        matching = airline_service.search(q.strip(), limit=20)
+        if matching:
+            search_airline_codes = [a.icao_code for a in matching]
+
+    # Fetch flights from database with optional filters and pagination
     result = await asyncio.to_thread(
         repository.get_recent_flights,
         limit=applied_limit,
         is_military=mil,
         page=page,
         include_position_count=True,
-        exclude_live=exclude_live
+        exclude_live=exclude_live,
+        icao24=icao24,
+        airline=airline,
+        search_query=q.strip() if q else None,
+        search_airline_codes=search_airline_codes
     )
 
     return PaginatedFlightsResponse(

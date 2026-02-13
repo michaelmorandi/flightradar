@@ -2,6 +2,7 @@ export interface Flight {
   id: string;
   icao24: string;
   cls: string;
+  airlineIcao?: string;
   firstCntct: Date;
   lstCntct: Date;
   positionCount?: number;
@@ -42,4 +43,36 @@ export interface AirportInfo {
   airport: string;
   latitude: number;
   longitude: number;
+}
+
+export interface Airline {
+  icaoCode: string;
+  name: string;
+  country?: string;
+  callsign?: string;
+}
+
+export interface AirlineWithStats extends Airline {
+  flightCount: number;
+  aircraftCount: number;
+  lastSeen?: string;
+}
+
+export interface AirlineDetail extends Airline {
+  flightCount: number;
+  aircraftCount: number;
+  firstSeen?: string;
+  lastSeen?: string;
+  aircraft: string[];
+}
+
+export interface AirlinesResponse {
+  airlines: AirlineWithStats[];
+  total: number;
+}
+
+export interface FlightFilters {
+  icao24?: string;
+  airline?: string;
+  q?: string;
 }

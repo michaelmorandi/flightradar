@@ -23,6 +23,7 @@ class Flight(BaseModel):
     callsign: Optional[str] = None
     modeS: str
     is_military: bool = False
+    airline_icao: Optional[str] = None
     first_contact: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_contact: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expire_at: Optional[datetime] = None

@@ -1,18 +1,103 @@
 <template>
   <div class="flight-log-view">
     <div class="filter-bar">
-      <button
-        type="button"
-        class="filter-chip refresh-button"
-        @click="loadData"
-        :disabled="loading"
-      >
-        <i class="bi bi-arrow-clockwise" :class="{ 'spinning': loading }"></i>
-        Refresh
-      </button>
-      <div class="pagination-info" v-if="totalFlights > 0">
-        {{ totalFlights }} past flights
+      <div class="search-row">
+        <div class="search-box">
+          <i class="bi bi-search search-icon"></i>
+          <input
+            type="text"
+            class="search-input"
+            v-model="searchText"
+            placeholder="Search callsign or airline..."
+            @input="onSearchInput"
+          />
+          <button
+            v-if="searchText"
+            class="search-clear"
+            @click="clearSearch"
+          >
+            <i class="bi bi-x"></i>
+          </button>
+        </div>
+        <button
+          type="button"
+          class="filter-chip refresh-button"
+          @click="loadData"
+          :disabled="loading"
+        >
+          <i class="bi bi-arrow-clockwise" :class="{ 'spinning': loading }"></i>
+          <span class="refresh-label">Refresh</span>
+        </button>
       </div>
+
+      <div class="filter-row" v-if="hasActiveFilters || totalFlights > 0">
+        <div class="active-filters" v-if="hasActiveFilters">
+          <span
+            v-if="filters.icao24"
+            class="filter-chip active"
+            @click="removeFilter('icao24')"
+          >
+            <i class="bi bi-airplane"></i>
+            {{ filters.icao24.toUpperCase() }}
+            <i class="bi bi-x"></i>
+          </span>
+          <span
+            v-if="filters.airline"
+            class="filter-chip active"
+            @click="removeFilter('airline')"
+          >
+            <i class="bi bi-building"></i>
+            {{ airlineFilterLabel }}
+            <i class="bi bi-x"></i>
+          </span>
+        </div>
+
+        <div class="pagination-info" v-if="totalFlights > 0">
+          {{ totalFlights }} {{ hasActiveFilters || searchText ? 'matching' : 'past' }} flights
+        </div>
+      </div>
+    </div>
+
+    <!-- Context Card -->
+    <div v-if="contextCard" class="context-card">
+      <!-- Aircraft context -->
+      <template v-if="filters.icao24 && aircraftContext">
+        <div class="context-icon">
+          <img
+            v-if="aircraftContext.icaoType"
+            :src="silhouetteUrl(aircraftContext.icaoType)"
+            height="24px"
+            @error="($event.target as HTMLImageElement).src = '/silhouettes/generic.png'"
+          />
+          <i v-else class="bi bi-airplane"></i>
+        </div>
+        <div class="context-info">
+          <div class="context-title">
+            {{ aircraftContext.type || 'Unknown Aircraft' }}
+            <span v-if="aircraftContext.reg" class="context-reg">{{ aircraftContext.reg }}</span>
+          </div>
+          <div class="context-meta">
+            <span>ICAO24: {{ filters.icao24.toUpperCase() }}</span>
+            <span v-if="aircraftContext.op">{{ aircraftContext.op }}</span>
+          </div>
+        </div>
+      </template>
+
+      <!-- Airline context -->
+      <template v-else-if="filters.airline && airlineContext">
+        <div class="context-icon">
+          <i class="bi bi-building"></i>
+        </div>
+        <div class="context-info">
+          <div class="context-title">{{ airlineContext.name }}</div>
+          <div class="context-meta">
+            <span>ICAO: {{ airlineContext.icaoCode }}</span>
+            <span v-if="airlineContext.country">{{ airlineContext.country }}</span>
+            <span v-if="airlineContext.flightCount">{{ airlineContext.flightCount }} flights</span>
+            <span v-if="airlineContext.aircraftCount">{{ airlineContext.aircraftCount }} aircraft</span>
+          </div>
+        </div>
+      </template>
     </div>
 
     <div v-if="flights.length === 0 && loading" class="loading-state">
@@ -24,7 +109,8 @@
 
     <div v-else-if="flights.length === 0 && !loading" class="empty-state">
       <i class="bi bi-inbox"></i>
-      <p>No past flights found</p>
+      <p v-if="hasActiveFilters">No flights found for this filter</p>
+      <p v-else>No past flights found</p>
     </div>
 
     <div v-else class="flight-list">
@@ -32,6 +118,8 @@
         v-for="flight in flights"
         :key="flight.id"
         :flight="flight"
+        @filter-airline="onFilterAirline"
+        @filter-aircraft="onFilterAircraft"
       />
     </div>
 
@@ -72,15 +160,17 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
-import { Flight } from '@/model/backendModel';
+import { onMounted, ref, watch, computed, reactive } from 'vue';
+import type { Flight, Aircraft, FlightFilters, AirlineDetail } from '@/model/backendModel';
 import { getFlightApiService } from '@/services/flightApiService';
 import { useMilitaryStore } from '@/stores/militaryStore';
+import { silhouetteUrl } from '@/components/aircraftIcon';
 import FlightlogEntry from '@/components/flights/FlightlogEntry.vue';
 
 const PAGE_SIZE = 50;
 
 const militaryStore = useMilitaryStore();
+const apiService = getFlightApiService();
 
 const flights = ref<Array<Flight>>([]);
 const loading = ref(false);
@@ -88,15 +178,36 @@ const currentPage = ref(1);
 const totalFlights = ref(0);
 const totalPages = ref(0);
 
-const apiService = getFlightApiService();
+const filters = reactive<FlightFilters>({});
+const searchText = ref('');
+let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+const aircraftContext = ref<Aircraft | null>(null);
+const airlineContext = ref<AirlineDetail | null>(null);
+
+const hasActiveFilters = computed(() => !!filters.icao24 || !!filters.airline);
+const contextCard = computed(() => {
+  return (filters.icao24 && aircraftContext.value) || (filters.airline && airlineContext.value);
+});
+
+const airlineFilterLabel = computed(() => {
+  if (airlineContext.value) {
+    return `${filters.airline} - ${airlineContext.value.name}`;
+  }
+  return filters.airline || '';
+});
 
 const loadData = async () => {
   loading.value = true;
   try {
-    // Pass undefined when filter is off to get all flights (mil and non-mil)
-    // excludeLive=true filters out flights with last contact within 5 minutes
     const mil = militaryStore.militaryOnly ? true : undefined;
-    const response = await apiService.getFlights(PAGE_SIZE, mil, currentPage.value, true);
+    const activeFilters: FlightFilters = {};
+    if (filters.icao24) activeFilters.icao24 = filters.icao24;
+    if (filters.airline) activeFilters.airline = filters.airline;
+    if (searchText.value.trim()) activeFilters.q = searchText.value.trim();
+
+    const response = await apiService.getFlights(
+      PAGE_SIZE, mil, currentPage.value, true, activeFilters
+    );
     flights.value = response.flights;
     totalFlights.value = response.total;
     totalPages.value = response.totalPages;
@@ -109,6 +220,66 @@ const loadData = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+const onSearchInput = () => {
+  if (searchTimeout) clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => {
+    currentPage.value = 1;
+    loadData();
+  }, 300);
+};
+
+const clearSearch = () => {
+  searchText.value = '';
+  currentPage.value = 1;
+  loadData();
+};
+
+const loadContextData = async () => {
+  aircraftContext.value = null;
+  airlineContext.value = null;
+
+  if (filters.icao24) {
+    try {
+      aircraftContext.value = await apiService.getAircraft(filters.icao24);
+    } catch { /* ignore */ }
+  }
+
+  if (filters.airline) {
+    try {
+      airlineContext.value = await apiService.getAirlineDetail(filters.airline);
+    } catch { /* ignore */ }
+  }
+};
+
+const applyFilter = (key: keyof FlightFilters, value: string) => {
+  filters[key] = value;
+  currentPage.value = 1;
+  flights.value = [];
+  loadContextData();
+  loadData();
+};
+
+const removeFilter = (key: keyof FlightFilters) => {
+  filters[key] = undefined;
+  currentPage.value = 1;
+  flights.value = [];
+  if (key === 'icao24') aircraftContext.value = null;
+  if (key === 'airline') airlineContext.value = null;
+  loadData();
+};
+
+const onFilterAirline = (airlineIcao: string) => {
+  filters.icao24 = undefined;
+  aircraftContext.value = null;
+  applyFilter('airline', airlineIcao);
+};
+
+const onFilterAircraft = (icao24: string) => {
+  filters.airline = undefined;
+  airlineContext.value = null;
+  applyFilter('icao24', icao24);
 };
 
 watch(() => militaryStore.militaryOnly, () => {
@@ -124,6 +295,13 @@ const goToPage = (page: number) => {
   }
 };
 
+// Public method for external filter application (from parent components)
+const setFilter = (key: keyof FlightFilters, value: string) => {
+  applyFilter(key, value);
+};
+
+defineExpose({ setFilter });
+
 onMounted(() => {
   loadData();
 });
@@ -137,10 +315,81 @@ onMounted(() => {
 }
 
 .filter-bar {
+  margin-bottom: 16px;
+}
+
+.search-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
+}
+
+.search-box {
+  position: relative;
+  flex: 1;
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #adb5bd;
+  font-size: 0.82rem;
+  pointer-events: none;
+}
+
+.search-input {
+  width: 100%;
+  padding: 8px 32px 8px 34px;
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  color: #212529;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.search-input:focus {
+  border-color: #86b7fe;
+  box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
+}
+
+.search-input::placeholder {
+  color: #adb5bd;
+}
+
+.search-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #6c757d;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.search-clear:hover {
+  color: #212529;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.active-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .filter-chip {
@@ -175,12 +424,21 @@ onMounted(() => {
 }
 
 .filter-chip.active:hover:not(:disabled) {
-  background: #444;
-  border-color: #444;
+  background: #555;
+  border-color: #555;
+}
+
+.filter-chip.active .bi-x {
+  margin-left: 2px;
+  font-size: 0.85rem;
 }
 
 .filter-chip i {
   font-size: 0.75rem;
+}
+
+.filter-chip.refresh-button {
+  flex-shrink: 0;
 }
 
 .filter-chip.refresh-button i.spinning {
@@ -188,12 +446,8 @@ onMounted(() => {
 }
 
 @keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .pagination-info {
@@ -201,6 +455,62 @@ onMounted(() => {
   font-size: 0.8rem;
   color: #666;
   padding: 6px 12px;
+  white-space: nowrap;
+}
+
+.context-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 10px;
+}
+
+.context-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #dee2e6;
+}
+
+.context-icon i {
+  font-size: 1.1rem;
+  color: #495057;
+}
+
+.context-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.context-title {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: #212529;
+  text-align: left;
+}
+
+.context-reg {
+  font-weight: 400;
+  color: #6c757d;
+  margin-left: 8px;
+}
+
+.context-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 0.78rem;
+  color: #6c757d;
+  margin-top: 2px;
+  flex-wrap: wrap;
 }
 
 .loading-state {
@@ -281,5 +591,49 @@ onMounted(() => {
   font-size: 0.9rem;
   color: #495057;
   font-weight: 500;
+}
+
+/* Mobile responsive */
+@media (max-width: 640px) {
+  .flight-log-view {
+    padding: 8px;
+    padding-bottom: 80px; /* Space for bottom navbar */
+  }
+
+  .refresh-label {
+    display: none;
+  }
+
+  .filter-chip.refresh-button {
+    padding: 6px 10px;
+  }
+
+  .search-input {
+    font-size: 16px; /* Prevent iOS zoom */
+  }
+
+  .pagination-info {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+  }
+
+  .context-card {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .context-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .context-title {
+    font-size: 0.85rem;
+  }
+
+  .context-meta {
+    font-size: 0.72rem;
+    gap: 8px;
+  }
 }
 </style>

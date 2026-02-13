@@ -206,7 +206,11 @@ class MongoDBRepository:
         is_military: Optional[bool] = None,
         page: int = 1,
         include_position_count: bool = False,
-        exclude_live: bool = False
+        exclude_live: bool = False,
+        icao24: Optional[str] = None,
+        airline: Optional[str] = None,
+        search_query: Optional[str] = None,
+        search_airline_codes: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Get recent flights sorted by last_contact descending with pagination.
@@ -218,14 +222,40 @@ class MongoDBRepository:
             page: Page number (1-indexed)
             include_position_count: If True, include position count for each flight
             exclude_live: If True, exclude flights with last_contact within 5 minutes
+            icao24: If provided, filter by aircraft ICAO24 hex address (modeS)
+            airline: If provided, filter by airline ICAO 3-letter code
+            search_query: Free-text search matching callsign prefix or airline codes
+            search_airline_codes: Pre-resolved airline ICAO codes from name search
 
         Returns:
             Dictionary with 'flights' list, 'total' count, 'page', 'page_size', and 'total_pages'
         """
+        import re as _re
+
         query = {}
 
         if is_military is not None:
             query["is_military"] = is_military
+
+        if icao24:
+            query["modeS"] = icao24.lower()
+
+        if airline:
+            query["airline_icao"] = airline.upper()
+
+        # Free-text search: match callsign prefix OR resolved airline codes
+        if search_query:
+            escaped = _re.escape(search_query)
+            or_conditions = [
+                {"callsign": {"$regex": f"^{escaped}", "$options": "i"}}
+            ]
+            # Also match airline_icao directly if query looks like one
+            if search_query.isalpha() and len(search_query) <= 3:
+                or_conditions.append({"airline_icao": search_query.upper()})
+            # Include airline codes resolved from name search
+            if search_airline_codes:
+                or_conditions.append({"airline_icao": {"$in": search_airline_codes}})
+            query["$or"] = or_conditions
 
         if exclude_live:
             five_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
@@ -277,6 +307,49 @@ class MongoDBRepository:
             "page_size": limit,
             "total_pages": total_pages
         }
+
+    def get_airlines_with_counts(self) -> List[Dict[str, Any]]:
+        """Get all airlines seen in flights with their flight counts."""
+        pipeline = [
+            {"$match": {"airline_icao": {"$exists": True, "$ne": None}}},
+            {"$group": {
+                "_id": "$airline_icao",
+                "flight_count": {"$sum": 1},
+                "last_seen": {"$max": "$last_contact"},
+                "aircraft_count": {"$addToSet": "$modeS"}
+            }},
+            {"$project": {
+                "_id": 1,
+                "flight_count": 1,
+                "last_seen": 1,
+                "aircraft_count": {"$size": "$aircraft_count"}
+            }},
+            {"$sort": {"flight_count": -1}}
+        ]
+        return list(self.flights_collection.aggregate(pipeline))
+
+    def get_airline_detail(self, airline_icao: str) -> Optional[Dict[str, Any]]:
+        """Get detailed stats for a specific airline."""
+        pipeline = [
+            {"$match": {"airline_icao": airline_icao.upper()}},
+            {"$group": {
+                "_id": "$airline_icao",
+                "flight_count": {"$sum": 1},
+                "first_seen": {"$min": "$first_contact"},
+                "last_seen": {"$max": "$last_contact"},
+                "aircraft": {"$addToSet": "$modeS"}
+            }},
+            {"$project": {
+                "_id": 1,
+                "flight_count": 1,
+                "first_seen": 1,
+                "last_seen": 1,
+                "aircraft": 1,
+                "aircraft_count": {"$size": "$aircraft"}
+            }}
+        ]
+        results = list(self.flights_collection.aggregate(pipeline))
+        return results[0] if results else None
 
     def delete_flights_and_positions(self, flight_ids: List[str]):
         """Delete flights and their positions"""
@@ -368,13 +441,13 @@ class MongoDBRepository:
             self.positions_collection.insert_many(positions)
 
     @handle_mongodb_errors
-    def get_or_create_flight(self, modeS: str, is_military: bool, callsign: Optional[str] = None, expire_at: Optional[datetime] = None) -> Dict[str, Any]:
+    def get_or_create_flight(self, modeS: str, is_military: bool, callsign: Optional[str] = None, expire_at: Optional[datetime] = None, airline_icao: Optional[str] = None) -> Dict[str, Any]:
         """
         Create a new flight record for an aircraft.
         In the new design, each flight (even from the same aircraft) gets a new record.
         """
         now = datetime.now(timezone.utc)
-        
+
         try:
             # Create a new flight document
             flight_doc = {
@@ -383,38 +456,45 @@ class MongoDBRepository:
                 "is_military": is_military,
                 "first_contact": now
             }
-            
+
             # Add callsign if provided
             if callsign:
                 flight_doc["callsign"] = callsign
-                
+
+            # Add airline ICAO code if provided
+            if airline_icao:
+                flight_doc["airline_icao"] = airline_icao
+
             # Add expiration time if provided
             if expire_at:
                 flight_doc["expire_at"] = expire_at
-                
+
             # Insert the new flight
             result = self.flights_collection.insert_one(flight_doc)
-            
+
             return self.flights_collection.find_one({"_id": result.inserted_id})
-            
+
         except Exception as e:
             # If insertion failed (probably due to the unique modeS index still existing),
             # fall back to the old behavior for backward compatibility
             import logging
             logger = logging.getLogger("MongoDBRepository")
             logger.warning(f"Failed to create new flight record, falling back to upsert: {str(e)}")
-            
+
             # Prepare set fields
             set_fields = {
                 "last_contact": now
             }
-            
+
             if callsign:
                 set_fields["callsign"] = callsign
-                
+
+            if airline_icao:
+                set_fields["airline_icao"] = airline_icao
+
             if expire_at:
                 set_fields["expire_at"] = expire_at
-            
+
             result = self.flights_collection.find_one_and_update(
                 {"modeS": modeS},
                 {"$set": set_fields,

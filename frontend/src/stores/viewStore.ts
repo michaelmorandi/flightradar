@@ -7,7 +7,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 
-export type ViewType = 'live' | 'log';
+export type ViewType = 'live' | 'log' | 'airlines';
 
 export const useViewStore = defineStore('view', () => {
   const currentView = ref<ViewType>('live');
@@ -24,10 +24,15 @@ export const useViewStore = defineStore('view', () => {
     currentView.value = 'log';
   }
 
+  function showAirlines() {
+    currentView.value = 'airlines';
+  }
+
   return {
     currentView,
     setView,
     showLive,
     showLog,
+    showAirlines,
   };
 });

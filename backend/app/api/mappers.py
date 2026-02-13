@@ -8,6 +8,7 @@ def toFlightDto(flight: Dict[str, Any]) -> FlightDto:
         id=str(flight["_id"]),
         icao24=flight["modeS"],
         cls=flight.get("callsign"),
+        airlineIcao=flight.get("airline_icao"),
         lstCntct=to_datestring(flight["last_contact"]),
         firstCntct=to_datestring(flight["first_contact"]),
         positionCount=flight.get("position_count")

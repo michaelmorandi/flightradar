@@ -15,6 +15,7 @@ class FlightDto(BaseModel):
     id: str
     icao24: str
     cls: Optional[str] = None
+    airlineIcao: Optional[str] = None
     lstCntct: str
     firstCntct: str
     positionCount: Optional[int] = None
@@ -41,6 +42,35 @@ class AircraftDto(BaseModel):
     type: Optional[str] = None
     op: Optional[str] = None
     desig: Optional[str] = None
-    
+
     class Config:
         arbitrary_types_allowed = True
+
+
+class AirlineDto(BaseModel):
+    icaoCode: str
+    name: str
+    country: Optional[str] = None
+    callsign: Optional[str] = None
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class AirlineWithStatsDto(AirlineDto):
+    flightCount: int = 0
+    aircraftCount: int = 0
+    lastSeen: Optional[str] = None
+
+
+class AirlineDetailDto(AirlineDto):
+    flightCount: int = 0
+    aircraftCount: int = 0
+    firstSeen: Optional[str] = None
+    lastSeen: Optional[str] = None
+    aircraft: List[str] = []
+
+
+class AirlinesResponse(BaseModel):
+    airlines: List[AirlineWithStatsDto]
+    total: int

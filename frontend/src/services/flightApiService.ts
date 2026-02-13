@@ -2,7 +2,7 @@
  * Flight API Service
  *
  * Provides REST API access for fetching flight data, aircraft details,
- * and route information. This service handles non-streaming API calls.
+ * airline information, and route information.
  *
  * For live streaming data (positions, callsigns, categories), use
  * DataIngestionService instead.
@@ -11,13 +11,19 @@
 import Axios from 'axios';
 import { setupCache, type AxiosCacheInstance, type CacheRequestConfig } from 'axios-cache-interceptor';
 import { config } from '@/config';
-import type { Flight, Aircraft, TerrestialPosition, PaginatedFlightsResponse, AirportInfo } from '@/model/backendModel';
+import type {
+  Flight, Aircraft, TerrestialPosition, PaginatedFlightsResponse,
+  AirportInfo, AirlinesResponse, AirlineDetail, Airline, FlightFilters
+} from '@/model/backendModel';
 
 /** Cache TTL for flight list (1 second) */
 const FLIGHTS_CACHE_TTL = 1000;
 
 /** Cache TTL for aircraft details (1 hour) */
 const AIRCRAFT_CACHE_TTL = 1000 * 60 * 60;
+
+/** Cache TTL for airline data (5 minutes) */
+const AIRLINES_CACHE_TTL = 1000 * 60 * 5;
 
 /** HexDB API base path for route information */
 const HEXDB_API_BASEPATH = 'https://hexdb.io/api/v1/';
@@ -39,20 +45,21 @@ export class FlightApiService {
    * Get list of past flights from the database with pagination.
    *
    * @param limit Maximum number of flights to return per page
-   * @param mil Filter by military status: true for military only, false for civilian only, undefined for all
+   * @param mil Filter by military status
    * @param page Page number (1-indexed)
    * @param excludeLive If true, exclude flights with last contact within 5 minutes
+   * @param filters Optional filters for icao24 or airline
    */
-  async getFlights(limit: number = 50, mil?: boolean, page: number = 1, excludeLive: boolean = false): Promise<PaginatedFlightsResponse> {
+  async getFlights(
+    limit: number = 50,
+    mil?: boolean,
+    page: number = 1,
+    excludeLive: boolean = false,
+    filters?: FlightFilters
+  ): Promise<PaginatedFlightsResponse> {
     if (!this.apiUrl) {
       console.warn('Flight API URL not configured');
-      return {
-        flights: [],
-        total: 0,
-        page: 1,
-        pageSize: limit,
-        totalPages: 0
-      };
+      return { flights: [], total: 0, page: 1, pageSize: limit, totalPages: 0 };
     }
 
     const cacheConfig: CacheRequestConfig = {
@@ -69,6 +76,15 @@ export class FlightApiService {
     if (excludeLive) {
       params.append('exclude_live', 'true');
     }
+    if (filters?.icao24) {
+      params.append('icao24', filters.icao24);
+    }
+    if (filters?.airline) {
+      params.append('airline', filters.airline);
+    }
+    if (filters?.q) {
+      params.append('q', filters.q);
+    }
 
     try {
       const response = await this.axios.get(
@@ -78,7 +94,6 @@ export class FlightApiService {
 
       if (response.status >= 200 && response.status < 300) {
         const data = response.data;
-        // Convert date strings to Date objects
         data.flights = data.flights.map((flight: any) => ({
           ...flight,
           firstCntct: new Date(flight.firstCntct),
@@ -180,7 +195,6 @@ export class FlightApiService {
       );
 
       if (response.status >= 200 && response.status < 300) {
-        // Backend returns positions as arrays [lat, lon, alt]
         return response.data.map((arr: number[]) => ({
           lat: arr[0],
           lon: arr[1],
@@ -194,6 +208,102 @@ export class FlightApiService {
     } catch (error) {
       console.error(`Error fetching positions for flight ${flightId}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Get all airlines with flight statistics.
+   */
+  async getAirlines(query?: string): Promise<AirlinesResponse> {
+    if (!this.apiUrl) {
+      return { airlines: [], total: 0 };
+    }
+
+    const cacheConfig: CacheRequestConfig = {
+      cache: { ttl: AIRLINES_CACHE_TTL },
+    };
+
+    const params = new URLSearchParams();
+    if (query) {
+      params.append('q', query);
+    }
+
+    try {
+      const response = await this.axios.get(
+        `${this.apiUrl}/airlines?${params}`,
+        cacheConfig
+      );
+
+      if (response.status >= 200 && response.status < 300) {
+        return response.data;
+      }
+
+      return { airlines: [], total: 0 };
+    } catch (error) {
+      console.error('Error fetching airlines:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get airline details by ICAO code.
+   */
+  async getAirlineDetail(icaoCode: string): Promise<AirlineDetail | null> {
+    if (!this.apiUrl) {
+      return null;
+    }
+
+    const cacheConfig: CacheRequestConfig = {
+      cache: { ttl: AIRLINES_CACHE_TTL },
+    };
+
+    try {
+      const response = await this.axios.get(
+        `${this.apiUrl}/airlines/${icaoCode}`,
+        cacheConfig
+      );
+
+      if (response.status >= 200 && response.status < 300) {
+        return response.data;
+      }
+
+      return null;
+    } catch (error: unknown) {
+      if (Axios.isAxiosError(error) && error.response?.status === 404) {
+        return null;
+      }
+      console.error(`Error fetching airline ${icaoCode}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Search airline database by name or ICAO code.
+   */
+  async searchAirlines(query: string, limit: number = 20): Promise<Airline[]> {
+    if (!this.apiUrl || !query) {
+      return [];
+    }
+
+    const cacheConfig: CacheRequestConfig = {
+      cache: { ttl: AIRLINES_CACHE_TTL },
+    };
+
+    try {
+      const params = new URLSearchParams({ q: query, limit: limit.toString() });
+      const response = await this.axios.get(
+        `${this.apiUrl}/airlines/search?${params}`,
+        cacheConfig
+      );
+
+      if (response.status >= 200 && response.status < 300) {
+        return response.data;
+      }
+
+      return [];
+    } catch (error) {
+      console.error('Error searching airlines:', error);
+      return [];
     }
   }
 
@@ -220,7 +330,6 @@ export class FlightApiService {
    */
   async getFlightRoute(callsign: string): Promise<string | null> {
     try {
-      // Use a separate axios instance without caching for CORS reasons
       const response = await Axios.get(`${HEXDB_API_BASEPATH}route/iata/${callsign}`);
 
       if (response.status >= 200 && response.status < 300 && response.data?.route) {

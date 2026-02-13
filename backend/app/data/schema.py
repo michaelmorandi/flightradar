@@ -65,6 +65,7 @@ COLLECTIONS = {
             IndexDefinition(keys="last_contact"),
             IndexDefinition(keys="is_military"),
             IndexDefinition(keys=[("modeS", 1), ("callsign", 1)]),
+            IndexDefinition(keys="airline_icao"),
             # TTL index using expire_at field - expireAfterSeconds=0 means
             # document expires at the time specified in the expire_at field
             IndexDefinition(keys="expire_at", ttl_seconds=0),

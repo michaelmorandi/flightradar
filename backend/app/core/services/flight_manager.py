@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from ..utils.modes_util import ModesUtil
 from ..utils.time_util import make_datetimes_comparable
+from ..utils.callsign_util import extract_airline_icao
 from ..models.position_report import PositionReport
 from ..constants import MINUTES_BEFORE_CONSIDERED_NEW_FLIGHT
 
@@ -162,13 +163,16 @@ class FlightManager:
                 "modeS": modeS,
                 "is_military": is_military
             }
-            
+
             if callsign:
                 flight_data["callsign"] = callsign
-            
+                airline_icao = extract_airline_icao(callsign)
+                if airline_icao:
+                    flight_data["airline_icao"] = airline_icao
+
             if self._use_ttl_indexes and self._retention_minutes > 0:
                 flight_data["expire_at"] = now + timedelta(minutes=self._retention_minutes)
-            
+
             flight_obj = self.repository.get_or_create_flight(**flight_data)
             flight_id = str(flight_obj["_id"])
             

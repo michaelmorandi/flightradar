@@ -26,6 +26,15 @@
           <i class="bi bi-card-list"></i>
           <span>Flight history</span>
         </a>
+        <a
+          href="#"
+          class="nav-tab"
+          :class="{ active: viewStore.currentView === 'airlines' }"
+          @click.prevent="viewStore.showAirlines()"
+        >
+          <i class="bi bi-building"></i>
+          <span>Airlines</span>
+        </a>
         <button
           class="mil-toggle"
           :class="{ active: militaryStore.militaryOnly }"
@@ -41,13 +50,16 @@
       <LiveRadar />
     </div>
     <div v-show="viewStore.currentView === 'log'">
-      <FlightLog />
+      <FlightLog ref="flightLogRef" />
+    </div>
+    <div v-show="viewStore.currentView === 'airlines'">
+      <Airlines />
     </div>
   </template>
 </template>
 
 <script>
-import { defineComponent, watch, computed } from 'vue';
+import { defineComponent, watch, computed, ref, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { Tooltip } from 'bootstrap';
 import { useViewStore } from './stores/viewStore';
@@ -55,6 +67,7 @@ import { useAircraftStore } from './stores/aircraft';
 import { useMilitaryStore } from './stores/militaryStore';
 import LiveRadar from './views/LiveRadar.vue';
 import FlightLog from './views/FlightLog.vue';
+import Airlines from './views/Airlines.vue';
 
 export default defineComponent({
   name: 'App',
@@ -62,6 +75,7 @@ export default defineComponent({
   components: {
     LiveRadar,
     FlightLog,
+    Airlines,
   },
 
   setup() {
@@ -69,6 +83,7 @@ export default defineComponent({
     const viewStore = useViewStore();
     const aircraftStore = useAircraftStore();
     const militaryStore = useMilitaryStore();
+    const flightLogRef = ref<InstanceType<typeof FlightLog> | null>(null);
 
     const liveCount = computed(() => aircraftStore.activeAircraftList.length);
 
@@ -76,21 +91,36 @@ export default defineComponent({
       aircraftStore.activeAircraftList.filter(ac => militaryStore.isMilitary(ac.icao24)).length
     );
 
-    // Check if current route is a dashboard route
     const isDashboardRoute = computed(() => {
       return route.path.startsWith('/dashboard');
     });
 
-    // Update browser tab title with live aircraft count
     watch(liveCount, (count) => {
       document.title = count > 0 ? `Flightradar (${count})` : 'Flightradar';
     }, { immediate: true });
 
-    return { viewStore, militaryStore, militaryCount, isDashboardRoute };
+    // Listen for filter events from Airlines view
+    const handleAirlineFilter = (event: Event) => {
+      const icaoCode = (event as CustomEvent).detail;
+      viewStore.showLog();
+      // Use nextTick to ensure FlightLog is visible before applying filter
+      setTimeout(() => {
+        flightLogRef.value?.setFilter('airline', icaoCode);
+      }, 50);
+    };
+
+    onMounted(() => {
+      window.addEventListener('filter-airline', handleAirlineFilter);
+    });
+
+    onUnmounted(() => {
+      window.removeEventListener('filter-airline', handleAirlineFilter);
+    });
+
+    return { viewStore, militaryStore, militaryCount, isDashboardRoute, flightLogRef };
   },
 
   mounted() {
-    // Initialize Bootstrap tooltips
     new Tooltip(document.body, {
       selector: "[data-bs-toggle='tooltip']",
     });
@@ -207,5 +237,59 @@ export default defineComponent({
 
 .mil-toggle.active .mil-count {
   background: rgba(255, 255, 255, 0.2);
+}
+
+/* Mobile responsive navbar */
+@media (max-width: 640px) {
+  .app-nav {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    transform: none;
+    border-radius: 0;
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.1);
+    padding: 0;
+    /* Safe area for devices with home indicator */
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  .nav-tabs {
+    display: flex;
+    width: 100%;
+    justify-content: space-around;
+    padding: 6px 4px;
+  }
+
+  .nav-tab {
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 10px;
+    font-size: 0.68rem;
+  }
+
+  .nav-tab i {
+    font-size: 1.1rem;
+  }
+
+  .mil-toggle {
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 8px;
+    margin-left: 0;
+    font-size: 0.68rem;
+    border: none;
+  }
+
+  .mil-toggle i {
+    font-size: 1rem;
+  }
+
+  .mil-count {
+    font-size: 0.6rem;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+  }
 }
 </style>

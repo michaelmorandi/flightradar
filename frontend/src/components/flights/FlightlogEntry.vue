@@ -1,7 +1,14 @@
 <template>
   <div class="flLogEntry">
     <div class="entry-content" :class="{ 'clickable': hasPositions || isLive }" @click="toggleMap">
-      <div class="silhouette" data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true" :data-bs-title="operatorTooltip">
+      <div
+        class="silhouette"
+        data-bs-toggle="tooltip"
+        data-bs-placement="left"
+        data-bs-html="true"
+        :data-bs-title="operatorTooltip"
+        @click.stop="onAircraftClick"
+      >
         <img
           :src="silhouetteSrc"
           height="20px"
@@ -9,10 +16,20 @@
         />
       </div>
       <div class="callsign" v-if="flight.cls">
-        <span class="badge text-bg-secondary">{{ flight.cls }}</span>
+        <span
+          class="badge text-bg-secondary callsign-badge"
+          :class="{ 'has-airline': !!flight.airlineIcao }"
+          @click.stop="onCallsignClick"
+          :title="flight.airlineIcao ? `Show all ${flight.airlineIcao} flights` : undefined"
+        >{{ flight.cls }}</span>
       </div>
       <div class="aircraftType">{{ aircaftTypeTruncated }}</div>
-      <div class="operator">{{ aircaftOperatorTruncated }}</div>
+      <div
+        class="operator"
+        :class="{ 'operator-clickable': !!flight.airlineIcao }"
+        @click.stop="onOperatorClick"
+        :title="flight.airlineIcao ? `Show all ${flight.airlineIcao} flights` : undefined"
+      >{{ aircaftOperatorTruncated }}</div>
       <button
         v-if="hasPositions"
         class="map-toggle-btn"
@@ -45,6 +62,11 @@ import FlightLogMiniMap from './FlightLogMiniMap.vue';
 const props = defineProps({
   flight: { type: Object as PropType<Flight>, required: true },
 });
+
+const emit = defineEmits<{
+  (e: 'filter-airline', airlineIcao: string): void;
+  (e: 'filter-aircraft', icao24: string): void;
+}>();
 
 const apiService = getFlightApiService();
 const aircraftStore = useAircraftStore();
@@ -79,11 +101,11 @@ onMounted(async () => {
 });
 
 const operatorTooltip = computed(() => {
-  let tooltipContent = `<strong>ICAO 24-bit: </strong> ${props.flight?.icao24?.toUpperCase()}<br/>`;
+  let tooltipContent = `<strong>ICAO24: </strong> ${props.flight?.icao24?.toUpperCase()}<br/>`;
   if (aircraft.value.reg) tooltipContent += `<strong>Registration:</strong> ${aircraft.value.reg}<br/>`;
-  // Don't show timestamp for live/tracking aircraft
+  tooltipContent += `<small style="color:#6ea8fe">Click icon to show all flights</small>`;
   if (!isLive.value) {
-    tooltipContent += `${timestampTooltip.value}`;
+    tooltipContent += `<br/>${timestampTooltip.value}`;
   }
   return tooltipContent;
 });
@@ -95,7 +117,6 @@ const getTimestampString = (timestamp: Date): string => {
   let timestmpStr = '';
 
   if (hoursSinceTodayMidnight >= 0) {
-    // Today
     const minutes = differenceInMinutes(now, timestamp);
 
     if (isLive.value) {
@@ -104,10 +125,8 @@ const getTimestampString = (timestamp: Date): string => {
       timestmpStr = `Today, ${format(timestamp, 'HH:mm')}`;
     }
   } else if (hoursSinceTodayMidnight >= -24) {
-    // Yesterday
     timestmpStr = `Yesterday, ${format(timestamp, 'HH:mm')}`;
   } else {
-    // Older
     timestmpStr = format(timestamp, 'd.M.yyyy HH:mm');
   }
 
@@ -139,13 +158,27 @@ const aircaftTypeTruncated = computed(() => {
 
 const toggleMap = () => {
   if (isLive.value) {
-    // For live aircraft, switch to live view and select the flight
     aircraftStore.selectFlight(props.flight.id);
     viewStore.showLive();
   } else if (hasPositions.value) {
-    // For past flights with positions, toggle the inline mini map
     showMap.value = !showMap.value;
   }
+};
+
+const onCallsignClick = () => {
+  if (props.flight.airlineIcao) {
+    emit('filter-airline', props.flight.airlineIcao);
+  }
+};
+
+const onOperatorClick = () => {
+  if (props.flight.airlineIcao) {
+    emit('filter-airline', props.flight.airlineIcao);
+  }
+};
+
+const onAircraftClick = () => {
+  emit('filter-aircraft', props.flight.icao24);
 };
 </script>
 
@@ -153,7 +186,6 @@ const toggleMap = () => {
 .flLogEntry {
   font-size: 0.95em;
   border-bottom: solid 1px #e0e0e0;
-  max-width: 800px;
   transition: background-color 0.15s ease;
 }
 
@@ -162,11 +194,11 @@ const toggleMap = () => {
 }
 
 .entry-content {
-  height: 45px;
-  position: relative;
+  min-height: 45px;
   display: flex;
   align-items: center;
-  padding: 8px 0;
+  padding: 8px;
+  gap: 8px;
 }
 
 .entry-content.clickable {
@@ -174,33 +206,64 @@ const toggleMap = () => {
 }
 
 .silhouette {
-  position: absolute;
-  left: 8px;
+  flex-shrink: 0;
+  width: 48px;
   display: flex;
   align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.silhouette:hover img {
+  filter: brightness(0.7);
 }
 
 .callsign {
-  position: absolute;
-  left: 100px;
+  flex-shrink: 0;
+  width: 80px;
+}
+
+.callsign-badge.has-airline {
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.callsign-badge.has-airline:hover {
+  background-color: #495057 !important;
+  transform: scale(1.05);
 }
 
 .aircraftType {
-  position: absolute;
-  left: 200px;
+  flex: 1;
+  min-width: 0;
   color: #212529;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .operator {
-  position: absolute;
-  left: 540px;
+  flex: 1;
+  min-width: 0;
   color: #6c757d;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
+.operator-clickable {
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.operator-clickable:hover {
+  color: #0d6efd;
 }
 
 .map-toggle-btn {
-  position: absolute;
-  right: 8px;
+  flex-shrink: 0;
   background: none;
   border: 1px solid #dee2e6;
   padding: 6px 12px;
@@ -237,5 +300,45 @@ const toggleMap = () => {
 .map-toggle-btn.live:hover {
   background: #dcfce7;
   border-color: #4ade80;
+}
+
+/* Mobile responsive */
+@media (max-width: 640px) {
+  .entry-content {
+    gap: 6px;
+    padding: 8px 6px;
+  }
+
+  .silhouette {
+    width: 36px;
+  }
+
+  .silhouette img {
+    height: 16px !important;
+  }
+
+  .callsign {
+    width: auto;
+    flex-shrink: 0;
+  }
+
+  .callsign .badge {
+    font-size: 0.72rem;
+    padding: 3px 6px;
+  }
+
+  .aircraftType {
+    display: none;
+  }
+
+  .operator {
+    flex: 1;
+    font-size: 0.82rem;
+  }
+
+  .map-toggle-btn {
+    padding: 5px 8px;
+    font-size: 0.82rem;
+  }
 }
 </style>
