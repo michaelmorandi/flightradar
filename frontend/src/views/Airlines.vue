@@ -1,26 +1,5 @@
 <template>
   <div class="airlines-view">
-    <div class="airlines-header">
-      <h2 class="airlines-title">Airlines</h2>
-      <div class="search-bar">
-        <i class="bi bi-search search-icon"></i>
-        <input
-          type="text"
-          class="search-input"
-          v-model="searchQuery"
-          placeholder="Search airlines by name or ICAO code..."
-          @input="onSearchInput"
-        />
-        <button
-          v-if="searchQuery"
-          class="search-clear"
-          @click="clearSearch"
-        >
-          <i class="bi bi-x"></i>
-        </button>
-      </div>
-    </div>
-
     <div v-if="loading" class="loading-state">
       <div class="spinner-border" role="status">
         <span class="visually-hidden">Loading...</span>
@@ -30,7 +9,7 @@
 
     <div v-else-if="airlines.length === 0" class="empty-state">
       <i class="bi bi-building"></i>
-      <p v-if="searchQuery">No airlines found matching "{{ searchQuery }}"</p>
+      <p v-if="viewStore.searchQuery">No airlines found matching "{{ viewStore.searchQuery }}"</p>
       <p v-else>No airlines observed yet</p>
     </div>
 
@@ -63,7 +42,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import type { AirlineWithStats } from '@/model/backendModel';
 import { getFlightApiService } from '@/services/flightApiService';
 import { useViewStore } from '@/stores/viewStore';
@@ -73,7 +52,6 @@ const viewStore = useViewStore();
 
 const airlines = ref<AirlineWithStats[]>([]);
 const loading = ref(false);
-const searchQuery = ref('');
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 const loadAirlines = async (query?: string) => {
@@ -89,17 +67,12 @@ const loadAirlines = async (query?: string) => {
   }
 };
 
-const onSearchInput = () => {
+watch(() => viewStore.searchQuery, (query) => {
   if (searchTimeout) clearTimeout(searchTimeout);
   searchTimeout = setTimeout(() => {
-    loadAirlines(searchQuery.value || undefined);
+    loadAirlines(query || undefined);
   }, 300);
-};
-
-const clearSearch = () => {
-  searchQuery.value = '';
-  loadAirlines();
-};
+});
 
 const navigateToFlights = (icaoCode: string) => {
   // Switch to flight history view with airline filter
@@ -118,70 +91,7 @@ onMounted(() => {
 .airlines-view {
   max-width: 900px;
   margin: 0 auto;
-  padding: 16px;
-}
-
-.airlines-header {
-  margin-bottom: 20px;
-}
-
-.airlines-title {
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: #212529;
-  margin-bottom: 12px;
-  text-align: left;
-}
-
-.search-bar {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.search-icon {
-  position: absolute;
-  left: 12px;
-  color: #adb5bd;
-  font-size: 0.85rem;
-  pointer-events: none;
-}
-
-.search-input {
-  width: 100%;
-  padding: 10px 36px 10px 36px;
-  border: 1px solid #dee2e6;
-  border-radius: 10px;
-  font-size: 0.88rem;
-  color: #212529;
-  background: #fff;
-  outline: none;
-  transition: border-color 0.15s ease;
-}
-
-.search-input:focus {
-  border-color: #86b7fe;
-  box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
-}
-
-.search-input::placeholder {
-  color: #adb5bd;
-}
-
-.search-clear {
-  position: absolute;
-  right: 8px;
-  background: none;
-  border: none;
-  color: #6c757d;
-  cursor: pointer;
-  padding: 4px;
-  font-size: 1.1rem;
-  line-height: 1;
-}
-
-.search-clear:hover {
-  color: #212529;
+  padding: 56px 16px 16px;
 }
 
 .loading-state {
@@ -316,10 +226,6 @@ onMounted(() => {
   .airlines-view {
     padding: 8px;
     padding-bottom: 80px; /* Space for bottom navbar */
-  }
-
-  .search-input {
-    font-size: 16px; /* Prevent iOS zoom */
   }
 
   .airline-row {

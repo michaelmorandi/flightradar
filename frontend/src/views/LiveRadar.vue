@@ -1,6 +1,6 @@
 <template>
   <div class="live-radar-container">
-    <LiveAircraftList @aircraft-selected="showFlightDetails" />
+    <LiveAircraftList v-show="viewStore.listVisible" @aircraft-selected="showFlightDetails" />
 
     <div
       :class="[{ 'offcanvas-start': !isMobile, 'offcanvas-bottom': isMobile }, 'offcanvas', 'details-offcanvas']"
@@ -39,6 +39,7 @@ import { Offcanvas } from 'bootstrap';
 import { ref, onMounted, watch } from 'vue';
 import { useAircraftStore } from '@/stores/aircraft';
 import { useMilitaryStore } from '@/stores/militaryStore';
+import { useViewStore } from '@/stores/viewStore';
 
 //Reference to the sidebar HTML div
 const sidebar = ref();
@@ -47,12 +48,13 @@ const mapComponent = ref();
 
 const apiKey = config.hereApiKey;
 
-const isMobile = ref();
+const isMobile = ref(false);
 
 const selectedFlight = ref<string>();
 
 const aircraftStore = useAircraftStore();
 const militaryStore = useMilitaryStore();
+const viewStore = useViewStore();
 
 onMounted(() => {
   isMobile.value = window.innerWidth < 768;

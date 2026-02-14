@@ -52,7 +52,7 @@ ARG BUILD_COMMIT
 ARG BUILD_TIMESTAMP
 RUN mkdir -p resources && \
     echo "{\"commit_id\": \"${BUILD_COMMIT}\", \"build_timestamp\": \"${BUILD_TIMESTAMP}\"}" > resources/meta.json
-COPY --chown=radar backend/resources/mil_ranges.json resources/
+COPY --chown=radar backend/resources/mil_ranges.json backend/resources/operators.json resources/
 COPY --chown=radar backend/flightradar.py ./
 
 # Copy frontend build from previous stage

@@ -1,35 +1,6 @@
 <template>
   <div class="flight-log-view">
     <div class="filter-bar">
-      <div class="search-row">
-        <div class="search-box">
-          <i class="bi bi-search search-icon"></i>
-          <input
-            type="text"
-            class="search-input"
-            v-model="searchText"
-            placeholder="Search callsign or airline..."
-            @input="onSearchInput"
-          />
-          <button
-            v-if="searchText"
-            class="search-clear"
-            @click="clearSearch"
-          >
-            <i class="bi bi-x"></i>
-          </button>
-        </div>
-        <button
-          type="button"
-          class="filter-chip refresh-button"
-          @click="loadData"
-          :disabled="loading"
-        >
-          <i class="bi bi-arrow-clockwise" :class="{ 'spinning': loading }"></i>
-          <span class="refresh-label">Refresh</span>
-        </button>
-      </div>
-
       <div class="filter-row" v-if="hasActiveFilters || totalFlights > 0">
         <div class="active-filters" v-if="hasActiveFilters">
           <span
@@ -53,7 +24,7 @@
         </div>
 
         <div class="pagination-info" v-if="totalFlights > 0">
-          {{ totalFlights }} {{ hasActiveFilters || searchText ? 'matching' : 'past' }} flights
+          {{ totalFlights }} {{ hasActiveFilters || viewStore.searchQuery ? 'matching' : 'past' }} flights
         </div>
       </div>
     </div>
@@ -164,12 +135,14 @@ import { onMounted, ref, watch, computed, reactive } from 'vue';
 import type { Flight, Aircraft, FlightFilters, AirlineDetail } from '@/model/backendModel';
 import { getFlightApiService } from '@/services/flightApiService';
 import { useMilitaryStore } from '@/stores/militaryStore';
+import { useViewStore } from '@/stores/viewStore';
 import { silhouetteUrl } from '@/components/aircraftIcon';
 import FlightlogEntry from '@/components/flights/FlightlogEntry.vue';
 
 const PAGE_SIZE = 50;
 
 const militaryStore = useMilitaryStore();
+const viewStore = useViewStore();
 const apiService = getFlightApiService();
 
 const flights = ref<Array<Flight>>([]);
@@ -179,7 +152,6 @@ const totalFlights = ref(0);
 const totalPages = ref(0);
 
 const filters = reactive<FlightFilters>({});
-const searchText = ref('');
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 const aircraftContext = ref<Aircraft | null>(null);
 const airlineContext = ref<AirlineDetail | null>(null);
@@ -203,7 +175,7 @@ const loadData = async () => {
     const activeFilters: FlightFilters = {};
     if (filters.icao24) activeFilters.icao24 = filters.icao24;
     if (filters.airline) activeFilters.airline = filters.airline;
-    if (searchText.value.trim()) activeFilters.q = searchText.value.trim();
+    if (viewStore.searchQuery.trim()) activeFilters.q = viewStore.searchQuery.trim();
 
     const response = await apiService.getFlights(
       PAGE_SIZE, mil, currentPage.value, true, activeFilters
@@ -222,19 +194,13 @@ const loadData = async () => {
   }
 };
 
-const onSearchInput = () => {
+watch(() => viewStore.searchQuery, () => {
   if (searchTimeout) clearTimeout(searchTimeout);
   searchTimeout = setTimeout(() => {
     currentPage.value = 1;
     loadData();
   }, 300);
-};
-
-const clearSearch = () => {
-  searchText.value = '';
-  currentPage.value = 1;
-  loadData();
-};
+});
 
 const loadContextData = async () => {
   aircraftContext.value = null;
@@ -300,7 +266,7 @@ const setFilter = (key: keyof FlightFilters, value: string) => {
   applyFilter(key, value);
 };
 
-defineExpose({ setFilter });
+defineExpose({ setFilter, loadData, loading });
 
 onMounted(() => {
   loadData();
@@ -311,72 +277,11 @@ onMounted(() => {
 .flight-log-view {
   max-width: 900px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 56px 16px 16px;
 }
 
 .filter-bar {
   margin-bottom: 16px;
-}
-
-.search-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.search-box {
-  position: relative;
-  flex: 1;
-}
-
-.search-icon {
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #adb5bd;
-  font-size: 0.82rem;
-  pointer-events: none;
-}
-
-.search-input {
-  width: 100%;
-  padding: 8px 32px 8px 34px;
-  border: 1px solid #dee2e6;
-  border-radius: 10px;
-  font-size: 0.85rem;
-  color: #212529;
-  background: #fff;
-  outline: none;
-  transition: border-color 0.15s ease;
-}
-
-.search-input:focus {
-  border-color: #86b7fe;
-  box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
-}
-
-.search-input::placeholder {
-  color: #adb5bd;
-}
-
-.search-clear {
-  position: absolute;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  color: #6c757d;
-  cursor: pointer;
-  padding: 2px 4px;
-  font-size: 1rem;
-  line-height: 1;
-}
-
-.search-clear:hover {
-  color: #212529;
 }
 
 .filter-row {
@@ -435,19 +340,6 @@ onMounted(() => {
 
 .filter-chip i {
   font-size: 0.75rem;
-}
-
-.filter-chip.refresh-button {
-  flex-shrink: 0;
-}
-
-.filter-chip.refresh-button i.spinning {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
 }
 
 .pagination-info {
@@ -598,18 +490,6 @@ onMounted(() => {
   .flight-log-view {
     padding: 8px;
     padding-bottom: 80px; /* Space for bottom navbar */
-  }
-
-  .refresh-label {
-    display: none;
-  }
-
-  .filter-chip.refresh-button {
-    padding: 6px 10px;
-  }
-
-  .search-input {
-    font-size: 16px; /* Prevent iOS zoom */
   }
 
   .pagination-info {

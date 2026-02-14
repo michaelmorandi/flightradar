@@ -1,23 +1,6 @@
 <template>
-  <div class="live-aircraft-list" :class="{ 'list-collapsed': isListCollapsed }">
-    <div class="search-bar">
-      <i class="bi bi-search search-icon"></i>
-      <input
-        type="text"
-        class="search-input"
-        placeholder="Search..."
-        v-model="searchQuery"
-      />
-      <button
-        class="collapse-btn"
-        @click="toggleListCollapse"
-        :title="isListCollapsed ? 'Expand list' : 'Collapse list'"
-      >
-        <i :class="isListCollapsed ? 'bi bi-chevron-down' : 'bi bi-chevron-up'"></i>
-      </button>
-    </div>
-
-    <div class="list-content" v-show="!isListCollapsed">
+  <div class="live-aircraft-list">
+    <div class="list-content">
       <div
         v-for="aircraft in filteredAircraft"
         :key="aircraft.flightId"
@@ -54,23 +37,18 @@
 import { ref, computed, watch } from 'vue';
 import { useAircraftStore } from '@/stores/aircraft';
 import { useMilitaryStore } from '@/stores/militaryStore';
+import { useViewStore } from '@/stores/viewStore';
 import { getAircraftDetailsService } from '@/services/aircraftDetailsService';
 import { getFlightApiService } from '@/services/flightApiService';
 import { silhouetteUrl } from '@/components/aircraftIcon';
 
 const aircraftStore = useAircraftStore();
 const militaryStore = useMilitaryStore();
+const viewStore = useViewStore();
 const aircraftDetailsService = getAircraftDetailsService();
 const flightApiService = getFlightApiService();
 
 const emit = defineEmits(['aircraftSelected']);
-
-const searchQuery = ref('');
-const isListCollapsed = ref(false);
-
-const toggleListCollapse = () => {
-  isListCollapsed.value = !isListCollapsed.value;
-};
 
 const getSilhouetteSrc = (icaoType?: string): string => {
   if (icaoType) {
@@ -138,12 +116,12 @@ const filteredAircraft = computed(() => {
     list = list.filter(ac => militaryStore.isMilitary(ac.icao24));
   }
 
-  if (searchQuery.value.trim()) {
-    const query = searchQuery.value.toLowerCase();
+  if (viewStore.searchQuery.trim()) {
+    const query = viewStore.searchQuery.toLowerCase();
     list = list.filter((aircraft) => {
       const callsign = aircraft.callsign?.toLowerCase() || '';
-      const icao = aircraft.icao24?.toLowerCase() || '';
-      return callsign.includes(query) || icao.includes(query);
+      const operator = aircraft.operator?.toLowerCase() || '';
+      return callsign.includes(query) || operator.includes(query);
     });
   }
 
@@ -176,61 +154,9 @@ const selectAircraft = (flightId: string) => {
   overflow: hidden;
 }
 
-.live-aircraft-list.list-collapsed {
-  bottom: auto;
-}
-
-.search-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-}
-
-.search-icon {
-  color: #999;
-  font-size: 0.8rem;
-  flex-shrink: 0;
-}
-
-.search-input {
-  flex: 1;
-  min-width: 0;
-  padding: 6px 10px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 14px;
-  font-size: 0.8rem;
-  outline: none;
-  background: rgba(0, 0, 0, 0.03);
-  transition: border-color 0.2s;
-}
-
-.search-input:focus {
-  border-color: #0d6efd;
-  background: #fff;
-}
-
-.collapse-btn {
-  background: none;
-  border: none;
-  padding: 4px 6px;
-  cursor: pointer;
-  color: #999;
-  font-size: 0.75rem;
-  border-radius: 8px;
-  flex-shrink: 0;
-  transition: all 0.15s ease;
-}
-
-.collapse-btn:hover {
-  background: rgba(0, 0, 0, 0.06);
-  color: #333;
-}
-
 .list-content {
   flex: 1;
   overflow-y: auto;
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .aircraft-item {

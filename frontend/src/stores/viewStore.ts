@@ -11,9 +11,12 @@ export type ViewType = 'live' | 'log' | 'airlines';
 
 export const useViewStore = defineStore('view', () => {
   const currentView = ref<ViewType>('live');
+  const searchQuery = ref('');
+  const listVisible = ref(window.innerWidth >= 768);
 
   function setView(view: ViewType) {
     currentView.value = view;
+    searchQuery.value = '';
   }
 
   function showLive() {
@@ -30,6 +33,8 @@ export const useViewStore = defineStore('view', () => {
 
   return {
     currentView,
+    searchQuery,
+    listVisible,
     setView,
     showLive,
     showLog,
