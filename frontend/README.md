@@ -31,11 +31,20 @@ VITE_MOCK_DATA=false
 **Note**: A `.env` file should already exist with default values. Update `VITE_HERE_API_KEY` if you want map functionality.
 
 ### 3. Start development server
+
 ```bash
-npm run dev
+npm run dev        # uses .env (local backend at localhost:8000)
+npm run dev:prod   # uses .env.prod (production API)
 ```
 
 The frontend will be available at http://localhost:5173
+
+#### Environment profiles
+
+| File | Used by | Purpose |
+|------|---------|---------|
+| `.env` | `npm run dev` | Local development |
+| `.env.prod` | `npm run dev:prod` | Points to production API |
 
 ### 4. Build for production
 ```bash

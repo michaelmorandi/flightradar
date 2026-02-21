@@ -57,7 +57,14 @@
       <!-- Airline context -->
       <template v-else-if="filters.airline && airlineContext">
         <div class="context-icon">
-          <i class="bi bi-building"></i>
+          <img
+            v-if="!airlineLogoError"
+            :src="`https://raw.githubusercontent.com/Jxck-S/airline-logos/main/fr24_banners/${filters.airline}.png`"
+            :alt="filters.airline"
+            class="context-airline-logo"
+            @error="airlineLogoError = true"
+          />
+          <i v-else class="bi bi-building"></i>
         </div>
         <div class="context-info">
           <div class="context-title">{{ airlineContext.name }}</div>
@@ -156,6 +163,7 @@ const filters = reactive<FlightFilters>({});
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 const aircraftContext = ref<Aircraft | null>(null);
 const airlineContext = ref<AirlineDetail | null>(null);
+const airlineLogoError = ref(false);
 
 const hasActiveFilters = computed(() => !!filters.icao24 || !!filters.airline);
 const contextCard = computed(() => {
@@ -178,8 +186,11 @@ const loadData = async () => {
     if (filters.airline) activeFilters.airline = filters.airline;
     if (viewStore.searchQuery.trim()) activeFilters.q = viewStore.searchQuery.trim();
 
+    // When filtering by a specific aircraft, include live flights too so the
+    // clicked flight always appears (its last_contact may have just been updated)
+    const excludeLive = !filters.icao24;
     const response = await apiService.getFlights(
-      PAGE_SIZE, mil, currentPage.value, true, activeFilters
+      PAGE_SIZE, mil, currentPage.value, excludeLive, activeFilters
     );
     flights.value = response.flights;
     totalFlights.value = response.total;
@@ -214,6 +225,7 @@ const loadContextData = async () => {
   }
 
   if (filters.airline) {
+    airlineLogoError.value = false;
     try {
       airlineContext.value = await apiService.getAirlineDetail(filters.airline);
     } catch { /* ignore */ }
@@ -375,6 +387,12 @@ onMounted(() => {
 }
 
 .context-silhouette {
+  max-width: 72px;
+  max-height: 36px;
+  object-fit: contain;
+}
+
+.context-airline-logo {
   max-width: 72px;
   max-height: 36px;
   object-fit: contain;

@@ -40,6 +40,16 @@
         <DetailField label="Operator" :text="aircraft ? aircraft.op : null" />
       </div>
     </div>
+    <div class="row" v-if="flight?.airlineIcao && !airlineLogoError">
+      <div class="col airline-logo-row">
+        <img
+          :src="`https://raw.githubusercontent.com/Jxck-S/airline-logos/main/fr24_banners/${flight.airlineIcao}.png`"
+          :alt="flight.airlineIcao"
+          class="airline-banner"
+          @error="airlineLogoError = true"
+        />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -61,6 +71,7 @@ const props = defineProps({
 const flight = ref<Flight>();
 const aircraft = ref<Aircraft>();
 const routeInfo = ref<string | null>(null);
+const airlineLogoError = ref(false);
 
 const apiService = getFlightApiService();
 const dataService = getDataIngestionService();
@@ -107,6 +118,7 @@ const loadFlightData = async (flightId: string) => {
   flight.value = undefined;
   aircraft.value = undefined;
   routeInfo.value = null;
+  airlineLogoError.value = false;
 
   try {
     // Fetch flight details
@@ -320,5 +332,18 @@ const arrivalAirport = computed(() => {
   position: absolute;
   top: 0px;
   left: 0px;
+}
+
+.airline-logo-row {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 4px;
+}
+
+.airline-banner {
+  max-width: 160px;
+  max-height: 50px;
+  object-fit: contain;
+  opacity: 0.85;
 }
 </style>

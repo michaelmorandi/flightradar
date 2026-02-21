@@ -34,6 +34,7 @@ async def get_airlines(
             name=airline_info.name if airline_info else icao_code,
             country=airline_info.country if airline_info else None,
             callsign=airline_info.callsign if airline_info else None,
+            iataCode=airline_info.iata_code if airline_info and airline_info.iata_code else None,
             flightCount=entry["flight_count"],
             aircraftCount=entry.get("aircraft_count", 0),
             lastSeen=to_datestring(entry["last_seen"]) if entry.get("last_seen") else None
@@ -71,7 +72,8 @@ async def search_airlines(
             icaoCode=a.icao_code,
             name=a.name,
             country=a.country,
-            callsign=a.callsign
+            callsign=a.callsign,
+            iataCode=a.iata_code or None
         )
         for a in results
     ]
@@ -100,6 +102,7 @@ async def get_airline_detail(
         name=airline_info.name if airline_info else icao_code.upper(),
         country=airline_info.country if airline_info else None,
         callsign=airline_info.callsign if airline_info else None,
+        iataCode=airline_info.iata_code if airline_info and airline_info.iata_code else None,
         flightCount=db_detail["flight_count"] if db_detail else 0,
         aircraftCount=db_detail["aircraft_count"] if db_detail else 0,
         firstSeen=to_datestring(db_detail["first_seen"]) if db_detail and db_detail.get("first_seen") else None,

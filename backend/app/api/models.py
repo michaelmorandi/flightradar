@@ -52,6 +52,7 @@ class AirlineDto(BaseModel):
     name: str
     country: Optional[str] = None
     callsign: Optional[str] = None
+    iataCode: Optional[str] = None
 
     class Config:
         arbitrary_types_allowed = True

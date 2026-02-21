@@ -21,7 +21,16 @@
         class="airline-row"
         @click="navigateToFlights(airline.icaoCode)"
       >
-        <div class="airline-code">{{ airline.icaoCode }}</div>
+        <div class="airline-logo-cell">
+          <img
+            v-if="!logoErrors[airline.icaoCode]"
+            :src="`https://raw.githubusercontent.com/Jxck-S/airline-logos/main/fr24_banners/${airline.icaoCode}.png`"
+            :alt="airline.icaoCode"
+            class="airline-logo"
+            @error="logoErrors[airline.icaoCode] = true"
+          />
+          <div v-else class="airline-code">{{ airline.icaoCode }}</div>
+        </div>
         <div class="airline-info">
           <div class="airline-name">{{ airline.name }}</div>
           <div class="airline-meta">
@@ -52,6 +61,7 @@ const viewStore = useViewStore();
 
 const airlines = ref<AirlineWithStats[]>([]);
 const loading = ref(false);
+const logoErrors = ref<Record<string, boolean>>({});
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 const loadAirlines = async (query?: string) => {
@@ -157,9 +167,23 @@ onMounted(() => {
   background-color: #f8f9fa;
 }
 
-.airline-code {
+.airline-logo-cell {
   flex-shrink: 0;
-  width: 52px;
+  width: 91px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.airline-logo {
+  width: 70px;
+  height: 40px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.airline-code {
+  width: 91px;
   font-family: 'SF Mono', SFMono-Regular, ui-monospace, monospace;
   font-size: 0.82rem;
   font-weight: 600;
@@ -232,8 +256,17 @@ onMounted(() => {
     padding: 10px 12px;
   }
 
+  .airline-logo-cell {
+    width: 77px;
+  }
+
+  .airline-logo {
+    width: 56px;
+    height: 32px;
+  }
+
   .airline-code {
-    width: 44px;
+    width: 77px;
     font-size: 0.75rem;
     padding: 3px 6px;
   }

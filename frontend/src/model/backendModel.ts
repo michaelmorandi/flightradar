@@ -50,6 +50,7 @@ export interface Airline {
   name: string;
   country?: string;
   callsign?: string;
+  iataCode?: string;
 }
 
 export interface AirlineWithStats extends Airline {

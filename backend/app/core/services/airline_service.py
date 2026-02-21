@@ -14,13 +14,14 @@ logger = logging.getLogger(__name__)
 
 
 class AirlineInfo:
-    __slots__ = ('icao_code', 'name', 'country', 'callsign')
+    __slots__ = ('icao_code', 'name', 'country', 'callsign', 'iata_code')
 
-    def __init__(self, icao_code: str, name: str, country: str, callsign: str):
+    def __init__(self, icao_code: str, name: str, country: str, callsign: str, iata_code: str = ''):
         self.icao_code = icao_code
         self.name = name
         self.country = country
         self.callsign = callsign
+        self.iata_code = iata_code
 
     def to_dict(self):
         return {
@@ -28,6 +29,7 @@ class AirlineInfo:
             'name': self.name,
             'country': self.country,
             'callsign': self.callsign,
+            'iata_code': self.iata_code,
         }
 
 
@@ -56,6 +58,7 @@ class AirlineService:
                 name=values[0],
                 country=values[1],
                 callsign=values[2],
+                iata_code=values[3] if len(values) > 3 else '',
             )
             self._airlines[icao_code] = airline
             self._search_index.append((values[0].lower(), icao_code))
