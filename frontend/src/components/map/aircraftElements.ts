@@ -69,7 +69,7 @@ export class AircraftIcon {
     aircraftDomIconElement.style.position = 'relative';
 
     aircraftDomIconElement.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="11.25px" height="15px" style="position: absolute; left: -5.625px; top: -7.5px; will-change: transform; backface-visibility: hidden;" viewBox="0 0 15 20">
+      <svg xmlns="http://www.w3.org/2000/svg" width="22.5px" height="30px" style="position: absolute; left: -11.25px; top: -15px; will-change: transform; backface-visibility: hidden;" viewBox="0 0 15 20">
         <polygon points="0,20 7.5,12 15,20 7.5,0 0,20" fill="rgb(${AircraftIcon.INACTIVE_COLOR})" stroke="black" stroke-width="1" />
       </svg>
       <div class="aircraft-popover" style="
@@ -401,8 +401,7 @@ export class AircraftMarker {
       const width = parseFloat(newSvg.getAttribute('width') || '22.5');
       const height = parseFloat(newSvg.getAttribute('height') || '30');
 
-      // Scale down default icon to 50%
-      const scale = category === 'default' ? 0.5 : 1;
+      const scale = 1;
       const scaledWidth = width * scale;
       const scaledHeight = height * scale;
 

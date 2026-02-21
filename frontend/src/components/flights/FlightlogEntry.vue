@@ -4,6 +4,7 @@
       <div
         v-if="!singleAircraft"
         class="silhouette"
+        ref="silhouetteRef"
         data-bs-toggle="tooltip"
         data-bs-placement="left"
         data-bs-html="true"
@@ -55,6 +56,7 @@ import { Aircraft, Flight } from '@/model/backendModel';
 import { getFlightApiService } from '@/services/flightApiService';
 import { silhouetteUrl } from '@/components/aircraftIcon';
 import { computed, onMounted, ref, PropType } from 'vue';
+import { Tooltip } from 'bootstrap';
 import { truncate } from '@/utils/string';
 import { differenceInMinutes, differenceInHours, startOfDay, format } from 'date-fns';
 import { useAircraftStore } from '@/stores/aircraft';
@@ -77,6 +79,7 @@ const viewStore = useViewStore();
 
 const GENERIC_SILHOUETTE = '/silhouettes/generic.png';
 
+const silhouetteRef = ref<HTMLElement | null>(null);
 const aircraft = ref<Aircraft>({ icao24: '' });
 const showMap = ref(false);
 const imageError = ref(false);
@@ -185,6 +188,9 @@ const onOperatorClick = () => {
 };
 
 const onAircraftClick = () => {
+  if (silhouetteRef.value) {
+    Tooltip.getInstance(silhouetteRef.value)?.hide();
+  }
   emit('filter-aircraft', props.flight.icao24);
 };
 </script>
