@@ -1,27 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="22.5px" height="30px" viewBox="0 0 15 20">
+<svg xmlns="http://www.w3.org/2000/svg" width="18.77px" height="22.5px" viewBox="0.74 2.96 13.68 14.02">
   <!-- B3: UAV/Drone - Quadcopter design -->
-  <g fill="rgb(250, 255, 255)" stroke="black" stroke-width="0.8">
-    <!-- Central body -->
-    <circle cx="7.5" cy="10" r="2" />
-    <!-- Arms to motors -->
-    <line x1="7.5" y1="10" x2="2.5" y2="5" stroke-width="1" />
-    <line x1="7.5" y1="10" x2="12.5" y2="5" stroke-width="1" />
-    <line x1="7.5" y1="10" x2="2.5" y2="15" stroke-width="1" />
-    <line x1="7.5" y1="10" x2="12.5" y2="15" stroke-width="1" />
-    <!-- Motors/Propellers -->
-    <circle cx="2.5" cy="5" r="1.5" fill="none" stroke-width="0.8" />
-    <circle cx="12.5" cy="5" r="1.5" fill="none" stroke-width="0.8" />
-    <circle cx="2.5" cy="15" r="1.5" fill="none" stroke-width="0.8" />
-    <circle cx="12.5" cy="15" r="1.5" fill="none" stroke-width="0.8" />
-    <!-- Propeller blades (crossed lines) -->
-    <line x1="1.5" y1="5" x2="3.5" y2="5" stroke-width="0.6" />
-    <line x1="11.5" y1="5" x2="13.5" y2="5" stroke-width="0.6" />
-    <line x1="1.5" y1="15" x2="3.5" y2="15" stroke-width="0.6" />
-    <line x1="11.5" y1="15" x2="13.5" y2="15" stroke-width="0.6" />
-    <!-- Camera gimbal -->
-    <rect x="6.5" y="11.5" width="2" height="1.5" rx="0.3" />
-    <!-- Antenna -->
-    <line x1="7.5" y1="8" x2="7.5" y2="5.5" stroke-width="0.6" />
-    <circle cx="7.5" cy="5.5" r="0.5" />
-  </g>
+  <circle cx="7.5" cy="10" r="2" style="fill:#faffff;stroke:#000000;stroke-width:0.8" />
+  <line x1="6.4011941" y1="11.246216" x2="3.3668659" y2="14.231858" stroke-width="0.601113" style="fill:#faffff;stroke:#000000" />
+  <line x1="11.654664" y1="5.8909326" x2="8.6203356" y2="8.8765745" stroke-width="0.601113" style="fill:#faffff;stroke:#000000" />
+  <line x1="3.3827686" y1="5.8644705" x2="6.3684106" y2="8.898798" stroke-width="0.601113" style="fill:#faffff;stroke:#000000" />
+  <line x1="8.7589312" y1="11.065301" x2="11.744574" y2="14.099628" stroke-width="0.601113" style="fill:#faffff;stroke:#000000" />
+  <ellipse cx="2.3841591" cy="15.373974" rx="1.5570878" ry="1.5741777" style="fill:#faffff;stroke:#000000;stroke-width:0.626244" />
+  <ellipse cx="12.861118" cy="15.408779" rx="1.5570878" ry="1.5741777" style="fill:#faffff;stroke:#000000;stroke-width:0.626244" />
+  <ellipse cx="2.2979286" cy="4.5718374" rx="1.5570878" ry="1.5741777" style="fill:#faffff;stroke:#000000;stroke-width:0.626244" />
+  <ellipse cx="12.757954" cy="4.5370326" rx="1.5570878" ry="1.5741777" style="fill:#faffff;stroke:#000000;stroke-width:0.626244" />
 </svg>

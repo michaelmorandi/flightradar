@@ -37,7 +37,7 @@
           <img
             v-if="aircraftContext.icaoType"
             :src="silhouetteUrl(aircraftContext.icaoType)"
-            height="24px"
+            class="context-silhouette"
             @error="($event.target as HTMLImageElement).src = '/silhouettes/generic.png'"
           />
           <i v-else class="bi bi-airplane"></i>
@@ -89,6 +89,7 @@
         v-for="flight in flights"
         :key="flight.id"
         :flight="flight"
+        :single-aircraft="!!filters.icao24"
         @filter-airline="onFilterAirline"
         @filter-aircraft="onFilterAircraft"
       />
@@ -366,11 +367,17 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 80px;
+  height: 44px;
   background: #fff;
   border-radius: 8px;
   border: 1px solid #dee2e6;
+}
+
+.context-silhouette {
+  max-width: 72px;
+  max-height: 36px;
+  object-fit: contain;
 }
 
 .context-icon i {
@@ -503,8 +510,8 @@ onMounted(() => {
   }
 
   .context-icon {
-    width: 32px;
-    height: 32px;
+    width: 64px;
+    height: 36px;
   }
 
   .context-title {

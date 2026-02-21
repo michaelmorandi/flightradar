@@ -2,6 +2,7 @@
   <div class="flLogEntry">
     <div class="entry-content" :class="{ 'clickable': hasPositions || isLive }" @click="toggleMap">
       <div
+        v-if="!singleAircraft"
         class="silhouette"
         data-bs-toggle="tooltip"
         data-bs-placement="left"
@@ -11,7 +12,6 @@
       >
         <img
           :src="silhouetteSrc"
-          height="20px"
           @error="onImageError"
         />
       </div>
@@ -23,8 +23,10 @@
           :title="flight.airlineIcao ? `Show all ${flight.airlineIcao} flights` : undefined"
         >{{ flight.cls }}</span>
       </div>
-      <div class="aircraftType">{{ aircaftTypeTruncated }}</div>
+      <div v-if="singleAircraft" class="flight-time">{{ flightTimestamp }}</div>
+      <div v-if="!singleAircraft" class="aircraftType">{{ aircaftTypeTruncated }}</div>
       <div
+        v-if="!singleAircraft"
         class="operator"
         :class="{ 'operator-clickable': !!flight.airlineIcao }"
         @click.stop="onOperatorClick"
@@ -61,6 +63,7 @@ import FlightLogMiniMap from './FlightLogMiniMap.vue';
 
 const props = defineProps({
   flight: { type: Object as PropType<Flight>, required: true },
+  singleAircraft: { type: Boolean, default: false },
 });
 
 const emit = defineEmits<{
@@ -139,6 +142,10 @@ const timestampTooltip = computed(() => {
   return `<i class="bi bi-radar"></i> ${lastContactStr}`;
 });
 
+const flightTimestamp = computed(() => {
+  return getTimestampString(new Date(props.flight.firstCntct));
+});
+
 const isLive = computed(() => {
   const lastContact = new Date(props.flight.lstCntct);
   return differenceInMinutes(new Date(), lastContact) < 5;
@@ -207,11 +214,16 @@ const onAircraftClick = () => {
 
 .silhouette {
   flex-shrink: 0;
-  width: 48px;
+  width: 90px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+}
+
+.silhouette img {
+  max-width: 100%;
+  height: auto;
 }
 
 .silhouette:hover img {
@@ -231,6 +243,16 @@ const onAircraftClick = () => {
 .callsign-badge.has-airline:hover {
   background-color: #495057 !important;
   transform: scale(1.05);
+}
+
+.flight-time {
+  flex: 1;
+  min-width: 0;
+  color: #6c757d;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .aircraftType {
@@ -310,11 +332,7 @@ const onAircraftClick = () => {
   }
 
   .silhouette {
-    width: 36px;
-  }
-
-  .silhouette img {
-    height: 16px !important;
+    width: 68px;
   }
 
   .callsign {
