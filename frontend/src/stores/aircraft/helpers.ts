@@ -12,7 +12,7 @@ import type {
   RawPositionData,
   HistoryPosition,
 } from './types';
-import { mapProtobufCategoryToIcon, determineAircraftCategory, type AircraftCategory } from '@/utils/aircraftIcons';
+import { mapProtobufCategoryToIcon, determineAircraftCategory, BALLOON_CATEGORY, type AircraftCategory } from '@/utils/aircraftIcons';
 
 /**
  * Create a new AircraftState from an initial position update.
@@ -208,7 +208,10 @@ export function mapCategoryToIcon(
  * 3. Default icon
  */
 export function toMapView(aircraft: AircraftState): MapAircraftView | null {
-  const heading = resolveHeading(aircraft);
+  const iconCategory = mapCategoryToIcon(aircraft.category, aircraft.icaoType, aircraft.aircraftType);
+
+  // Balloons always face north (heading 0) — direction estimation is not applicable
+  const heading = iconCategory === BALLOON_CATEGORY ? 0 : resolveHeading(aircraft);
 
   // Cannot display aircraft without valid heading
   if (heading === undefined) {
@@ -221,7 +224,7 @@ export function toMapView(aircraft: AircraftState): MapAircraftView | null {
     lat: aircraft.lat,
     lng: aircraft.lon, // HERE Maps uses 'lng'
     heading,
-    iconCategory: mapCategoryToIcon(aircraft.category, aircraft.icaoType, aircraft.aircraftType),
+    iconCategory,
     callsign: aircraft.callsign,
     groundSpeed: aircraft.groundSpeed,
     category: aircraft.category,

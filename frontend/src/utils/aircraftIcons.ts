@@ -2,6 +2,9 @@
 
 export type AircraftCategory = 'A1' | 'A2' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'B1' | 'B2' | 'B3' | 'B4' | 'B5' | 'B6' | 'default';
 
+// Category key for lighter-than-air / balloon aircraft
+export const BALLOON_CATEGORY = 'B2' as const satisfies AircraftCategory;
+
 // Map of aircraft categories to their descriptions
 export const AIRCRAFT_CATEGORIES = {
   A1: 'Light (< 15,500 lbs)',
