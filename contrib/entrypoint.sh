@@ -11,8 +11,17 @@ export VITE_HERE_API_KEY=${VITE_HERE_API_KEY:-}
 export VITE_CLIENT_SECRET=${VITE_CLIENT_SECRET:-}
 export VITE_MOCK_DATA=${VITE_MOCK_DATA:-false}
 export VITE_ENABLE_INTERPOLATION=${VITE_ENABLE_INTERPOLATION:-true}
+export VITE_UMAMI_ID=${VITE_UMAMI_ID:-}
 
 echo "Using VITE_FLIGHT_API_URL: $VITE_FLIGHT_API_URL"
+
+index_html=/usr/share/nginx/html/index.html
+if [ -f "$index_html" ]; then
+  if [ ! -f "$index_html.tmpl" ]; then
+    cp "$index_html" "$index_html.tmpl"
+  fi
+  envsubst '${VITE_UMAMI_ID}' < "$index_html.tmpl" > "$index_html"
+fi
 
 for file in /usr/share/nginx/html/assets/index-*.js /usr/share/nginx/html/assets/FlightLog-*.js;
 do
