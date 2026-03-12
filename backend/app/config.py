@@ -85,9 +85,6 @@ class Config:
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 15  # Token lifetime in minutes
     JWT_ALGORITHM = 'HS256'
 
-    # Client secret for anonymous user authentication
-    CLIENT_SECRET = None  # Required - must match frontend VITE_CLIENT_SECRET
-
     # Admin user password (set via ADMIN_PASSWORD environment variable)
     ADMIN_PASSWORD = None
 
@@ -173,11 +170,6 @@ class Config:
                 self.JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get(ENV_JWT_ACCESS_TOKEN_EXPIRE_MINUTES))
             except ValueError:
                 pass
-        # Accept either CLIENT_SECRET or VITE_CLIENT_SECRET (for single-variable Docker setup)
-        if os.environ.get(ENV_CLIENT_SECRET):
-            self.CLIENT_SECRET = os.environ.get(ENV_CLIENT_SECRET)
-        elif os.environ.get('VITE_CLIENT_SECRET'):
-            self.CLIENT_SECRET = os.environ.get('VITE_CLIENT_SECRET')
         if os.environ.get(ENV_ADMIN_PASSWORD):
             self.ADMIN_PASSWORD = os.environ.get(ENV_ADMIN_PASSWORD)
         if os.environ.get(ENV_ALLOWED_ORIGINS):

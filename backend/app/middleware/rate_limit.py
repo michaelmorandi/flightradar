@@ -21,19 +21,39 @@ def rate_limit_key_func(request: Request) -> str:
     """
     Key function for rate limiting based on client IP address.
 
+    Priority:
+    1. CF-Connecting-IP — set by Cloudflare with the real client IP;
+       clients cannot inject or override this header.
+    2. request.client.host — the direct TCP peer address set by the ASGI
+       server; also not spoofable by clients.
+
+    X-Forwarded-For is intentionally not used: its first entry is
+    client-controlled and can be set to any arbitrary value, which would
+    allow an attacker to bypass per-IP rate limits entirely.
+
     Args:
         request: FastAPI request object
 
     Returns:
         Client IP address as string
     """
-    # Try to get real IP from X-Forwarded-For header (if behind proxy)
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        # Take the first IP if multiple are present
-        return forwarded.split(",")[0].strip()
+    # 1. Cloudflare sets this to the verified client IP before the request
+    #    reaches the origin.  It passes through Nginx unchanged and cannot
+    #    be injected by a remote client.
+    cf_ip = request.headers.get("CF-Connecting-IP")
+    if cf_ip:
+        return cf_ip.strip()
 
-    # Fall back to direct client IP
+    # 2. Nginx sets X-Real-IP to $remote_addr (the IP that connected to
+    #    Nginx itself).  Unlike X-Forwarded-For, Nginx overwrites this
+    #    value rather than appending to a client-supplied one, so it is
+    #    safe to trust when a reverse proxy is present.
+    #    Requires:  proxy_set_header X-Real-IP $remote_addr;  in nginx.conf
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+
+    # 3. No proxy: use the raw TCP peer address from the ASGI layer.
     return get_remote_address(request)
 
 

@@ -12,7 +12,7 @@ from .models import User
 from .database import init_auth_database, close_auth_database, get_user_db
 from .config import create_fastapi_users, create_auth_backend
 from .manager import get_user_manager, UserManager
-from .anonymous import ensure_anonymous_user, ensure_admin_user, ADMIN_EMAIL
+from .anonymous import ensure_admin_user, ADMIN_EMAIL
 from .manager import ANONYMOUS_EMAIL
 
 __all__ = [
@@ -24,7 +24,6 @@ __all__ = [
     "create_auth_backend",
     "get_user_manager",
     "UserManager",
-    "ensure_anonymous_user",
     "ensure_admin_user",
     "ANONYMOUS_EMAIL",
     "ADMIN_EMAIL",

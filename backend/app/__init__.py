@@ -10,7 +10,7 @@ from .meta import MetaInformation
 from .data import init_mongodb
 from .core.utils.logging import init_logging
 from .middleware import limiter, rate_limit_exceeded_handler
-from .auth import init_auth_database, close_auth_database, ensure_anonymous_user, ensure_admin_user
+from .auth import init_auth_database, close_auth_database, ensure_admin_user
 from .auth.config import setup_auth_routes
 
 from .scheduling import configure_scheduling
@@ -18,19 +18,25 @@ from .scheduling import configure_scheduling
 
 
 def create_app():
+    # Config must be loaded first so we can conditionally enable API docs
+    conf = Config()
+    init_logging(conf.LOGGING_CONFIG)
+
+    # Disable Swagger UI and ReDoc in production.
+    # ALLOWED_ORIGINS being set is the reliable production signal: development
+    # runs without it (defaults to localhost), production always sets it explicitly.
+    is_production = bool(conf.ALLOWED_ORIGINS)
     app = FastAPI(
         title="Flight Radar",
         description="ADS-B flight data API",
-        version="1.0.0"
+        version="1.0.0",
+        docs_url=None if is_production else "/docs",
+        redoc_url=None if is_production else "/redoc",
     )
 
     # Rate limiting
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
-
-    # Config
-    conf = Config()
-    init_logging(conf.LOGGING_CONFIG)
     
     logger = logging.getLogger(__name__)
 
@@ -91,10 +97,6 @@ def create_app():
 
         # Initialize auth database (async MongoDB via Beanie)
         await init_auth_database(conf.MONGODB_URI, conf.MONGODB_DB_NAME)
-
-        # Ensure anonymous user exists for backward compatibility
-        if conf.CLIENT_SECRET:
-            await ensure_anonymous_user(conf.CLIENT_SECRET)
 
         # Ensure admin user exists if password is configured
         if conf.ADMIN_PASSWORD:
