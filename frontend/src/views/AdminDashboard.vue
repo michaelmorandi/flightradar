@@ -22,6 +22,21 @@
           </div>
         </div>
       </div>
+      <div class="stat-card">
+        <div class="stat-icon">
+          <i class="bi bi-code-slash"></i>
+        </div>
+        <div class="stat-content">
+          <div class="stat-label">Build Info</div>
+          <div v-if="!loading" class="build-info">
+            <span class="build-commit" :title="buildInfo.commit_id">{{ buildInfo.commit_id || '—' }}</span>
+            <span class="build-date">{{ buildInfo.build_timestamp ? new Date(buildInfo.build_timestamp).toLocaleDateString() : '—' }}</span>
+          </div>
+          <div class="stat-value loading" v-else>
+            <span class="spinner-small"></span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div v-if="error" class="error-banner">
@@ -69,6 +84,7 @@ const router = useRouter();
 const authService = getAuthService();
 
 const flightCount = ref(0);
+const buildInfo = ref<{ commit_id: string; build_timestamp: string }>({ commit_id: '', build_timestamp: '' });
 const loading = ref(true);
 const error = ref('');
 const loggingOut = ref(false);
@@ -79,13 +95,13 @@ const fetchStats = async () => {
   error.value = '';
 
   try {
-    const response = await Axios.get(`${config.flightApiUrl}/admin/stats`, {
-      withCredentials: true,
-    });
+    const [statsRes, infoRes] = await Promise.all([
+      Axios.get(`${config.flightApiUrl}/admin/stats`, { withCredentials: true }),
+      Axios.get(`${config.flightApiUrl}/info`, { withCredentials: true }),
+    ]);
 
-    if (response.status >= 200 && response.status < 300) {
-      flightCount.value = response.data.flight_count;
-    }
+    flightCount.value = statsRes.data.flight_count;
+    buildInfo.value = infoRes.data;
   } catch (err) {
     error.value = 'Failed to load dashboard statistics';
     console.error('Error fetching admin stats:', err);
@@ -212,6 +228,25 @@ onMounted(() => {
 .stat-value.loading {
   display: flex;
   align-items: center;
+}
+
+.build-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.build-commit {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #333;
+  font-family: monospace;
+}
+
+.build-date {
+  font-size: 0.8rem;
+  color: #888;
 }
 
 .spinner-small {

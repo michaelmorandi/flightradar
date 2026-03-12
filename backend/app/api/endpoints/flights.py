@@ -14,8 +14,9 @@ from ..mappers import toFlightDto
 from ..models import FlightDto, PaginatedFlightsResponse, to_datestring
 from ...sse.manager import sse_manager, SSEClient
 from ...sse.notifier import SSENotifier
-from ..dependencies import MetaInfoDep, get_mongodb, MongoDBRepositoryDep, CurrentUserDep, AirlineServiceDep
+from ..dependencies import MetaInfoDep, get_mongodb, MongoDBRepositoryDep, CurrentUserDep, AdminUserDep, AirlineServiceDep
 from ...scheduling import UPDATER_JOB_NAME
+from ...middleware.rate_limit import limiter, SSE_CONNECTION_LIMIT
 
 # Initialize logging
 logger = logging.getLogger(__name__)
@@ -44,7 +45,7 @@ class PositionReport(BaseModel):
 
 
 @router.get('/info', response_model=Dict[str, Any])
-def get_meta_info(meta_info: MetaInfoDep):
+def get_meta_info(meta_info: MetaInfoDep, current_user: AdminUserDep):
     return {
         "commit_id": meta_info.commit_id,
         "build_timestamp": meta_info.build_timestamp
@@ -184,6 +185,7 @@ async def get_flight(
 
 
 @router.get('/live/stream')
+@limiter.limit(SSE_CONNECTION_LIMIT)
 async def sse_all_positions(request: Request, current_user: CurrentUserDep):
     """SSE endpoint for real-time flight data (positions, categories, callsigns)"""
     client_id = str(uuid.uuid4())
@@ -289,8 +291,7 @@ async def sse_all_positions(request: Request, current_user: CurrentUserDep):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "Cache-Control"
+            "X-Accel-Buffering": "no"
         }
     )
 
@@ -349,6 +350,7 @@ async def _fetch_flight_positions(mongodb, flight_id: str) -> list:
 
 
 @router.get('/flights/{flight_id}/positions/stream')
+@limiter.limit(SSE_CONNECTION_LIMIT)
 async def sse_flight_positions(request: Request, flight_id: str, current_user: CurrentUserDep):
     """SSE endpoint for real-time position updates for a specific flight"""
     app = request.app
@@ -468,8 +470,7 @@ async def sse_flight_positions(request: Request, flight_id: str, current_user: C
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "Cache-Control"
+            "X-Accel-Buffering": "no"
         }
     )
 

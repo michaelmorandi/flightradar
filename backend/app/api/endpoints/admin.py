@@ -18,9 +18,10 @@ from fastapi import Request
 from .. import router
 from ..dependencies import AdminUserDep, CurrentUserDep, get_mongodb, get_config
 from ...auth.models import User
-from ...auth.anonymous import ADMIN_EMAIL, password_helper
+from ...auth.anonymous import ADMIN_EMAIL, ANONYMOUS_EMAIL, password_helper
 from ...auth.config import get_jwt_strategy, cookie_transport
 from ...config import Config
+from ...middleware.rate_limit import limiter, AUTH_TOKEN_LIMIT
 from ...data.repositories.aircraft_processing_repository import AircraftProcessingRepository
 from ...data.repositories.crawler_log_repository import CrawlerLogRepository
 
@@ -145,8 +146,38 @@ class AircraftEditResponse(BaseModel):
     last_modified: Optional[str] = None
 
 
+@router.post('/auth/anonymous', tags=["auth"])
+@limiter.limit(AUTH_TOKEN_LIMIT)
+async def anonymous_login(
+    request: Request,
+    response: Response,
+    config: Config = Depends(get_config)
+):
+    """
+    Issue an anonymous session without requiring credentials.
+    """
+    anon_user = await User.find_one(User.email == ANONYMOUS_EMAIL)
+    if not anon_user:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Anonymous authentication is not configured"
+        )
+
+    jwt_strategy = get_jwt_strategy(config.JWT_SECRET)
+    token = await jwt_strategy.write_token(anon_user)
+
+    login_response = await cookie_transport.get_login_response(token)
+    for header_name, header_value in login_response.headers.items():
+        if header_name.lower() == "set-cookie":
+            response.headers.append("set-cookie", header_value)
+
+    return {"status": "ok"}
+
+
 @router.post('/admin/login', tags=["admin"])
+@limiter.limit(AUTH_TOKEN_LIMIT)
 async def admin_login(
+    request: Request,
     response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     config: Config = Depends(get_config)
@@ -202,7 +233,7 @@ async def get_current_user_info(current_user: CurrentUserDep) -> UserInfo:
     """
     Get current user information.
 
-    Returns the current user's email, role, and admin status.
+    Returns the current users email, role, and admin status.
     Used by frontend to restore session state on page reload.
     """
     return UserInfo(

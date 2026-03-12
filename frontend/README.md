@@ -20,10 +20,6 @@ VITE_FLIGHT_API_URL=http://localhost:8000/api/v1
 # HERE Maps API Key (optional - get from https://developer.here.com/)
 VITE_HERE_API_KEY=
 
-# Flight API Authentication (optional)
-VITE_FLIGHT_API_USER=
-VITE_FLIGHT_API_PASSWORD=
-
 # Mock Data Mode (set to 'true' to use mock data instead of real API)
 VITE_MOCK_DATA=false
 ```

@@ -24,9 +24,6 @@ const REFRESH_BUFFER_MS = 2 * 60 * 1000;
 /** Token lifetime in seconds (must match backend) */
 const TOKEN_LIFETIME_SECONDS = 900; // 15 minutes
 
-/** Anonymous user email */
-const ANONYMOUS_EMAIL = 'anonymous@system.local';
-
 /** Admin user email */
 const ADMIN_EMAIL = 'admin@system.local';
 
@@ -39,7 +36,6 @@ interface UserInfo {
 export class AuthService {
   private axios: AxiosInstance;
   private apiUrl: string;
-  private clientSecret: string;
   private refreshTimer: number | null = null;
   private isAuthenticated = false;
   private _isAdmin = false;
@@ -51,11 +47,6 @@ export class AuthService {
     });
 
     this.apiUrl = config.flightApiUrl || '';
-    this.clientSecret = config.clientSecret || '';
-
-    if (!this.clientSecret) {
-      console.warn('CLIENT_SECRET not configured - authentication will fail');
-    }
   }
 
   /**
@@ -122,12 +113,8 @@ export class AuthService {
     }
 
     // No existing session, authenticate as anonymous
-    if (!this.clientSecret) {
-      throw new Error('Client secret not configured');
-    }
-
     try {
-      await this.login(ANONYMOUS_EMAIL, this.clientSecret);
+      await this.anonymousLogin();
 
       this.isAuthenticated = true;
       this._isAdmin = false;
@@ -140,6 +127,17 @@ export class AuthService {
       this._isAdmin = false;
       console.error('[Auth] Authentication failed:', error);
       throw new Error('Failed to authenticate with API');
+    }
+  }
+
+  /**
+   * Obtain an anonymous session via the backend's secret-free endpoint.
+   * No credentials are required or sent from the client.
+   */
+  private async anonymousLogin(): Promise<void> {
+    const response = await this.axios.post(`${this.apiUrl}/auth/anonymous`);
+    if (response.status !== 200 && response.status !== 204) {
+      throw new Error(`Anonymous login failed: ${response.statusText}`);
     }
   }
 
@@ -226,7 +224,7 @@ export class AuthService {
 
     // Re-authenticate as anonymous
     try {
-      await this.login(ANONYMOUS_EMAIL, this.clientSecret);
+      await this.anonymousLogin();
       this.isAuthenticated = true;
       console.log('[Auth] Fallback to anonymous auth successful');
       this.scheduleRefresh(TOKEN_LIFETIME_SECONDS);
@@ -268,14 +266,11 @@ export class AuthService {
           // Session expired or no longer admin, fall back to anonymous
           console.log('[Auth] Admin session expired, falling back to anonymous');
           this._isAdmin = false;
-          await this.login(ANONYMOUS_EMAIL, this.clientSecret);
+          await this.anonymousLogin();
         }
       } else {
         // Refresh as anonymous
-        if (!this.clientSecret) {
-          throw new Error('Client secret not configured');
-        }
-        await this.login(ANONYMOUS_EMAIL, this.clientSecret);
+        await this.anonymousLogin();
         console.log('[Auth] Token refreshed successfully');
       }
       this.scheduleRefresh(TOKEN_LIFETIME_SECONDS);

@@ -37,17 +37,18 @@
     </div>
     <div class="row" v-if="aircraft">
       <div class="col">
-        <DetailField label="Operator" :text="aircraft ? aircraft.op : null" />
-      </div>
-    </div>
-    <div class="row" v-if="flight?.airlineIcao && !airlineLogoError">
-      <div class="col airline-logo-row">
-        <img
-          :src="`https://raw.githubusercontent.com/Jxck-S/airline-logos/main/fr24_banners/${flight.airlineIcao}.png`"
-          :alt="flight.airlineIcao"
-          class="airline-banner"
-          @error="airlineLogoError = true"
-        />
+        <div style="position: relative; height: 45px">
+          <div class="operator-label">Operator</div>
+          <img
+            v-if="flight?.airlineIcao && !airlineLogoError"
+            :src="`https://raw.githubusercontent.com/Jxck-S/airline-logos/main/fr24_banners/${flight.airlineIcao}.png`"
+            :alt="flight.airlineIcao"
+            :title="aircraft.op"
+            class="airline-banner"
+            @error="airlineLogoError = true"
+          />
+          <div v-else class="operator-value">{{ aircraft.op }}</div>
+        </div>
       </div>
     </div>
   </div>
@@ -334,16 +335,29 @@ const arrivalAirport = computed(() => {
   left: 0px;
 }
 
-.airline-logo-row {
-  display: flex;
-  justify-content: center;
-  padding: 12px 0 4px;
+.operator-label {
+  font-size: 0.7em;
+  text-transform: uppercase;
+  color: rgb(100, 100, 100);
+  position: absolute;
+  top: 0px;
+  left: 0px;
+}
+
+.operator-value {
+  font-size: 1em;
+  position: absolute;
+  top: 15px;
+  left: 0px;
 }
 
 .airline-banner {
-  max-width: 160px;
-  max-height: 50px;
+  padding-top: 5px;
+  height: 25px;
   object-fit: contain;
   opacity: 0.85;
+  position: absolute;
+  top: 15px;
+  left: 0px;
 }
 </style>
