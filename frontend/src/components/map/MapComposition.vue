@@ -6,6 +6,7 @@
 import { onBeforeMount, onBeforeUnmount, ref, watch } from 'vue';
 import { useAircraftStore, useFlightHistoryStore } from '@/stores/aircraft';
 import { useMapStore } from '@/stores/map';
+import { useLocationStore } from '@/stores/locationStore';
 import { getDataIngestionService } from '@/services/dataIngestionService';
 import MapComponent from './MapComponent.vue';
 import { useMapRenderer } from '@/composables/useMapRenderer';
@@ -13,7 +14,38 @@ import { useMapRenderer } from '@/composables/useMapRenderer';
 const aircraftStore = useAircraftStore();
 const historyStore = useFlightHistoryStore();
 const mapStore = useMapStore();
+const locationStore = useLocationStore();
 const dataService = getDataIngestionService();
+
+declare let H: any;
+
+const USER_LOCATION_DOT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
+  <circle cx="10" cy="10" r="9" fill="#4285F4" fill-opacity="0.25"/>
+  <circle cx="10" cy="10" r="6" fill="#4285F4" stroke="white" stroke-width="2"/>
+</svg>`;
+
+let userLocationMarker: any = null;
+
+function addOrUpdateUserLocationMarker(lat: number, lng: number) {
+  if (!map.value) return;
+  const coords = { lat, lng };
+  if (userLocationMarker) {
+    userLocationMarker.setGeometry(coords);
+  } else {
+    const icon = new H.map.DomIcon(USER_LOCATION_DOT_SVG, {
+      anchor: { x: 10, y: 10 },
+    });
+    userLocationMarker = new H.map.DomMarker(coords, { icon, zIndex: 100 });
+    map.value.addObject(userLocationMarker);
+  }
+}
+
+function removeUserLocationMarker() {
+  if (userLocationMarker && map.value) {
+    map.value.removeObject(userLocationMarker);
+    userLocationMarker = null;
+  }
+}
 
 const props = defineProps({
   apikey: String,
@@ -78,6 +110,18 @@ watch(
   },
 );
 
+// Watch for user location changes and update the blue dot marker
+watch(
+  [() => locationStore.enabled, () => locationStore.lat, () => locationStore.lng],
+  ([enabled, lat, lng]) => {
+    if (enabled && lat !== null && lng !== null) {
+      addOrUpdateUserLocationMarker(lat, lng);
+    } else {
+      removeUserLocationMarker();
+    }
+  }
+);
+
 const onMapInitialized = ({ map: mapInstance }: { map: any; platform: any }) => {
   map.value = mapInstance;
 
@@ -91,6 +135,11 @@ const onMapInitialized = ({ map: mapInstance }: { map: any; platform: any }) => 
 
   // Initial marker update from current mapView
   mapRenderer.updateMarkers(aircraftStore.mapView);
+
+  // Apply user location marker if location is already enabled
+  if (locationStore.enabled && locationStore.lat !== null && locationStore.lng !== null) {
+    addOrUpdateUserLocationMarker(locationStore.lat, locationStore.lng);
+  }
 
   if (props.peridicallyRefresh) {
     intervalId.value = setInterval(() => {
@@ -107,6 +156,9 @@ onBeforeUnmount(async () => {
 
   // Clean up the map renderer
   mapRenderer.cleanup();
+
+  // Clean up user location marker
+  removeUserLocationMarker();
 
   mapStore.setInitialized(false);
 });

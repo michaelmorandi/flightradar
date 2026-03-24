@@ -74,6 +74,15 @@
           />
         </div>
         <button
+          v-if="viewStore.currentView === 'live'"
+          class="list-toggle"
+          :class="{ active: locationStore.enabled }"
+          @click="locationStore.toggle()"
+          title="Show my location"
+        >
+          <i class="bi bi-geo-alt-fill"></i>
+        </button>
+        <button
           v-if="viewStore.currentView === 'log'"
           class="list-toggle"
           @click="flightLogRef?.loadData()"
@@ -102,6 +111,7 @@ import { Tooltip } from 'bootstrap';
 import { useViewStore } from './stores/viewStore';
 import { useAircraftStore } from './stores/aircraft';
 import { useMilitaryStore } from './stores/militaryStore';
+import { useLocationStore } from './stores/locationStore';
 import LiveRadar from './views/LiveRadar.vue';
 import FlightLog from './views/FlightLog.vue';
 import Airlines from './views/Airlines.vue';
@@ -120,6 +130,7 @@ export default defineComponent({
     const viewStore = useViewStore();
     const aircraftStore = useAircraftStore();
     const militaryStore = useMilitaryStore();
+    const locationStore = useLocationStore();
     const flightLogRef = ref<InstanceType<typeof FlightLog> | null>(null);
     const dropdownRef = ref<HTMLElement | null>(null);
     const dropdownOpen = ref(false);
@@ -186,6 +197,7 @@ export default defineComponent({
     return {
       viewStore, militaryStore, militaryCount, isDashboardRoute, flightLogRef,
       dropdownRef, dropdownOpen, viewLabel, viewIcon, selectView, isMobile,
+      locationStore,
     };
   },
 
