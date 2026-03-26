@@ -12,7 +12,7 @@ dependencies = [
     "pymongo==4.15.3",
     "python-dateutil==2.9.0.post0",
     "pytz==2025.2",
-    "requests==2.32.5",
+    "requests==2.33.0",
     "typer==0.19.2",
     "uvicorn==0.37.0",
     "python-dotenv==1.0.1",
