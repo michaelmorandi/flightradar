@@ -25,6 +25,7 @@ const USER_LOCATION_DOT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20
 </svg>`;
 
 let userLocationMarker: any = null;
+let locationCentered = false;
 
 function addOrUpdateUserLocationMarker(lat: number, lng: number) {
   if (!map.value) return;
@@ -116,8 +117,13 @@ watch(
   ([enabled, lat, lng]) => {
     if (enabled && lat !== null && lng !== null) {
       addOrUpdateUserLocationMarker(lat, lng);
+      if (!locationCentered) {
+        locationCentered = true;
+        mapStore.panTo({ lat, lng }, 13);
+      }
     } else {
       removeUserLocationMarker();
+      locationCentered = false;
     }
   }
 );
@@ -139,6 +145,10 @@ const onMapInitialized = ({ map: mapInstance }: { map: any; platform: any }) => 
   // Apply user location marker if location is already enabled
   if (locationStore.enabled && locationStore.lat !== null && locationStore.lng !== null) {
     addOrUpdateUserLocationMarker(locationStore.lat, locationStore.lng);
+    if (!locationCentered) {
+      locationCentered = true;
+      mapStore.panTo({ lat: locationStore.lat, lng: locationStore.lng }, 13);
+    }
   }
 
   if (props.peridicallyRefresh) {
