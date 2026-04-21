@@ -15,7 +15,7 @@ dependencies = [
     "requests==2.33.0",
     "typer==0.19.2",
     "uvicorn==0.37.0",
-    "python-dotenv==1.0.1",
+    "python-dotenv==1.2.2",
     "grpcio>=1.60.0",
     "grpcio-tools>=1.60.0",
     "protobuf>=4.25.0",
