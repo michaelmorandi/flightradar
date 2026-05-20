@@ -12,6 +12,11 @@ node_modules
 /dist
 frontend/dist
 
+# Rust build artifacts
+backend-rs/target/
+target/
+**/*.rs.bk
+
 
 # local env files
 .env.local

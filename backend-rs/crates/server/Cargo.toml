@@ -1,0 +1,27 @@
+[package]
+name = "flightradar-server"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "flightradar-server"
+path = "src/main.rs"
+
+[dependencies]
+flightradar-domain = { workspace = true }
+flightradar-application = { workspace = true }
+flightradar-adapter-mongo = { workspace = true }
+flightradar-adapter-radar = { workspace = true }
+flightradar-adapter-metadata = { workspace = true }
+flightradar-adapter-auth = { workspace = true }
+flightradar-api = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
