@@ -13,7 +13,7 @@ pub mod live_state;
 pub mod queries;
 
 pub use aircraft_crawler::{AircraftCrawler, AircraftCrawlerConfig};
-pub use auth_service::AuthService;
+pub use auth_service::{AuthService, AuthServiceConfig};
 pub use error::ApplicationError;
 pub use event_bus::TokioBroadcastBus;
 pub use flight_updater::{FlightUpdater, FlightUpdaterConfig, FlightUpdaterTickReport};
