@@ -24,7 +24,10 @@ pub enum MetadataError {
 /// without touching the crawler.
 #[async_trait]
 pub trait MetadataSource: Send + Sync + std::fmt::Debug {
-    fn name(&self) -> &'static str;
+    /// Human-readable identifier — may be dynamic per-instance (e.g. one
+    /// adapter can spin up multiple `MetadataSource` instances for the
+    /// different sub-sources exposed by `nighthawk-proxy`).
+    fn name(&self) -> &str;
 
     /// Fetch what is known about `icao24`. `Ok(None)` means "not found" —
     /// distinct from `Err`, which means the source itself failed.

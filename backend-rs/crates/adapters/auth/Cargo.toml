@@ -16,3 +16,11 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
+argon2 = "0.5"
+password-hash = "0.5"
+jsonwebtoken = "9"
+serde = { workspace = true }
+rand = "0.8"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

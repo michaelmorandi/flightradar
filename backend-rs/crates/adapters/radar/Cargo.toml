@@ -12,8 +12,24 @@ workspace = true
 [dependencies]
 flightradar-domain = { workspace = true }
 async-trait = { workspace = true }
+async-stream = "0.3"
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 tracing = { workspace = true }
 time = { workspace = true }
 thiserror = { workspace = true }
 futures = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tonic = { version = "0.12", default-features = false, features = ["channel", "transport", "codegen", "prost"] }
+prost = "0.13"
+
+[build-dependencies]
+tonic-build = "0.12"
+protoc-bin-vendored = "3.1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
+wiremock = "0.6"
+tonic = { version = "0.12", features = ["transport", "server"] }

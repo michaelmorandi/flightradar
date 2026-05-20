@@ -52,7 +52,7 @@ pub struct AircraftCrawler {
     aircraft_repo: Arc<dyn AircraftRepository>,
     clock: Arc<dyn Clock>,
     config: AircraftCrawlerConfig,
-    breakers: Mutex<HashMap<&'static str, CircuitBreaker>>,
+    breakers: Mutex<HashMap<String, CircuitBreaker>>,
 }
 
 impl AircraftCrawler {
@@ -103,9 +103,9 @@ impl AircraftCrawler {
         let mut outcome = ProcessOutcome::default();
 
         for source in &self.sources {
-            let name = source.name();
+            let name = source.name().to_owned();
 
-            if !self.breaker_allow(name) {
+            if !self.breaker_allow(&name) {
                 outcome.skipped_by_breaker += 1;
                 continue;
             }
@@ -114,26 +114,26 @@ impl AircraftCrawler {
                 Ok(Some(found)) => {
                     merged.merge_from(&found);
                     outcome.source_successes += 1;
-                    self.breaker_success(name);
-                    self.record_log(icao24, name, true).await;
+                    self.breaker_success(&name);
+                    self.record_log(icao24, &name, true).await;
                     if merged.is_complete_with_operator() {
                         break;
                     }
                 }
                 Ok(None) => {
-                    self.breaker_success(name); // source healthy, just no data
-                    self.record_log(icao24, name, false).await;
+                    self.breaker_success(&name); // source healthy, just no data
+                    self.record_log(icao24, &name, false).await;
                 }
                 Err(MetadataError::RateLimited) => {
                     outcome.source_failures += 1;
-                    self.breaker_failure(name);
-                    self.record_log(icao24, name, false).await;
+                    self.breaker_failure(&name);
+                    self.record_log(icao24, &name, false).await;
                 }
                 Err(err) => {
                     outcome.source_failures += 1;
-                    self.breaker_failure(name);
-                    self.record_log(icao24, name, false).await;
-                    warn!(source = name, error = %err, %icao24, "metadata source error");
+                    self.breaker_failure(&name);
+                    self.record_log(icao24, &name, false).await;
+                    warn!(source = %name, error = %err, %icao24, "metadata source error");
                 }
             }
         }
@@ -148,16 +148,16 @@ impl AircraftCrawler {
         Ok(outcome)
     }
 
-    fn breaker_allow(&self, name: &'static str) -> bool {
+    fn breaker_allow(&self, name: &str) -> bool {
         let now = self.clock.now();
         let mut breakers = self.breakers.lock().expect("breakers mutex poisoned");
         let cb = breakers
-            .entry(name)
+            .entry(name.to_owned())
             .or_insert_with(|| CircuitBreaker::new(self.config.breaker));
         cb.allow(now)
     }
 
-    fn breaker_success(&self, name: &'static str) {
+    fn breaker_success(&self, name: &str) {
         if let Some(cb) = self
             .breakers
             .lock()
@@ -168,11 +168,11 @@ impl AircraftCrawler {
         }
     }
 
-    fn breaker_failure(&self, name: &'static str) {
+    fn breaker_failure(&self, name: &str) {
         let now = self.clock.now();
         let mut breakers = self.breakers.lock().expect("breakers mutex poisoned");
         let cb = breakers
-            .entry(name)
+            .entry(name.to_owned())
             .or_insert_with(|| CircuitBreaker::new(self.config.breaker));
         cb.record_failure(now);
     }
@@ -252,7 +252,7 @@ mod tests {
 
     #[async_trait]
     impl MetadataSource for ScriptedSource {
-        fn name(&self) -> &'static str {
+        fn name(&self) -> &str {
             self.name
         }
         async fn fetch(&self, _icao24: &Icao24) -> Result<Option<Aircraft>, MetadataError> {
