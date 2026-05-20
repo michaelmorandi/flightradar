@@ -16,3 +16,11 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 time = { workspace = true }
 thiserror = { workspace = true }
+futures = { workspace = true }
+mongodb = "3.1"
+bson = "2.13"
+regex = "1.11"
+serde = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
