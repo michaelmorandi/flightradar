@@ -11,12 +11,15 @@ workspace = true
 
 [dependencies]
 flightradar-domain = { workspace = true }
+arc-swap = "1.7"
 async-trait = { workspace = true }
 futures = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 time = { workspace = true }
+serde = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }

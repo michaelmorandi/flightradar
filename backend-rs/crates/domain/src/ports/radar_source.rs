@@ -18,17 +18,24 @@ pub enum RadarError {
     Transport(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
-pub type PositionStream =
-    Pin<Box<dyn Stream<Item = Result<PositionReport, RadarError>> + Send + 'static>>;
+/// Stream of position observations. Each item is one aircraft sighting —
+/// streaming sources (gRPC) forward server-stream items directly; polling
+/// sources (dump1090) emit each polled aircraft as a separate item.
+///
+/// Adapters are expected to reconnect internally on transient failures and
+/// surface only fatal conditions by closing the stream. Consumers should
+/// treat end-of-stream as a signal to back off and restart the source.
+pub type PositionStream = Pin<Box<dyn Stream<Item = PositionReport> + Send + 'static>>;
 
-/// A live ADS-B position source. Implementations decide whether they poll
-/// (dump1090) or maintain a persistent stream (gRPC).
+/// A live ADS-B position source. Implementations choose how they get the
+/// data — polled (dump1090) or persistent stream (gRPC) — and present a
+/// uniform pull-based `Stream` to the application.
 #[async_trait]
 pub trait RadarSource: Send + Sync + std::fmt::Debug {
     /// Human-readable identifier, used in logs/metrics (`"dump1090"`, `"grpc"`).
     fn name(&self) -> &'static str;
 
-    /// Begin streaming. May be called once per process; implementations
-    /// should reconnect internally and surface only fatal errors.
+    /// Begin a session. Called once per process; the returned stream is
+    /// expected to live as long as the source is healthy.
     async fn stream(&self) -> Result<PositionStream, RadarError>;
 }

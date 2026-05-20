@@ -74,32 +74,48 @@ Clean Architecture with strict, link-time-enforced dependency direction:
 
 ### Realtime pipeline
 
-The hot path is intentionally lock-free:
+The hot path is streaming end-to-end. Both gRPC (genuinely streaming) and
+dump1090 (poll, internally re-streamed) expose the same
+`RadarSource::stream() -> Stream<PositionReport>` interface to the
+application. The `FlightUpdater` consumes the stream continuously and
+flushes on a periodic tick.
 
 ```
-RadarSource impl  ──Stream<PositionReport>──▶  FlightUpdater (single task)
-                                                       │
-                                          publishes new immutable snapshot
-                                                       │
-                                              Arc<ArcSwap<FlightState>>
-                                                       │
-                                        ┌──────────────┼──────────────┐
-                                        ▼              ▼              ▼
-                                  Snapshot reads   broadcast::Sender   …
-                                  (GET /positions) (PositionEvent)
-                                                       │
-                                                 ┌─────┴─────┐
-                                                 ▼           ▼
-                                            SSE handler   Persistence subscriber
-                                            (per-client)  (batched Mongo writes)
+RadarSource impl  ──Stream<PositionReport>──▶  FlightUpdater.ingest()
+                                               (fast, in-memory pending map)
+                                                          │
+                                                          ▼
+                                            FlightUpdater.flush(now)
+                                            ──── every flush_interval ────
+                                              upserts flights
+                                              persists positions (batched)
+                                              prunes stale entries (TTL)
+                                              publishes Delta to event bus
+                                              swaps Arc<ArcSwap<LiveSnapshot>>
+                                                          │
+                                        ┌─────────────────┼─────────────────┐
+                                        ▼                 ▼                 ▼
+                                  Snapshot reads   broadcast::Sender   Persistence
+                                  (GET /positions) (PositionEvent)     subscriber
+                                                          │
+                                                          ▼
+                                                     SSE handlers
 ```
 
-- One updater task is the sole writer of `FlightState`. No locks.
-- Readers (HTTP and SSE init) hit `ArcSwap` — sub-microsecond.
+Key properties:
+- The updater is the sole writer of the live snapshot — no locks on the
+  read path; readers see immutable `Arc<LiveSnapshot>` snapshots.
+- `ingest()` is hot: dedupes by ICAO24, sub-microsecond, no I/O.
+- `flush()` is cold: runs on a configurable tick (default 2s), is the
+  only place that touches Mongo on the hot path.
+- Streaming sources push events as they arrive; the periodic flush
+  decouples downstream cadence from upstream chatter.
+- A `position_ttl_seconds` config drops aircraft that have not been seen
+  for a while — required for streaming sources where "disappeared" is
+  implicit.
 - Live position deltas fan out via `tokio::sync::broadcast` — lossy by
-  design (slow consumers get `Lagged`; SSE handler sends a fresh snapshot
-  and resumes).
-- Mongo writes are a separate subscriber — never on the ingestion hot path.
+  design (slow SSE clients get `Lagged`; the handler sends a fresh
+  snapshot and resumes).
 
 ## Crate layout (`backend-rs/`)
 

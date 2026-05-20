@@ -7,39 +7,25 @@ use std::collections::HashMap;
 use std::pin::Pin;
 
 use futures_core::Stream;
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::OffsetDateTime;
 
-use crate::entities::flight::FlightId;
-use crate::entities::position_report::AircraftCategory;
-use crate::value_objects::{Callsign, Icao24};
-
-/// One element of a `PositionDiff` map. Compact on purpose — broadcasts
-/// happen every tick.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LivePosition {
-    pub icao24: Icao24,
-    pub lat: f64,
-    pub lon: f64,
-    pub alt_ft: Option<i32>,
-    pub ground_speed_kt: Option<f64>,
-    pub track_deg: Option<f64>,
-    pub callsign: Option<Callsign>,
-    pub category: Option<AircraftCategory>,
-}
+use crate::entities::live_snapshot::LivePosition;
+use crate::value_objects::Icao24;
 
 /// Payload emitted by the `FlightUpdater` on every tick.
 #[derive(Debug, Clone)]
 pub enum PositionEvent {
     /// Initial snapshot sent to a freshly subscribed client.
     Snapshot {
-        positions: HashMap<FlightId, LivePosition>,
+        positions: HashMap<Icao24, LivePosition>,
         emitted_at: OffsetDateTime,
     },
-    /// Delta with only the positions that changed this tick.
+    /// Delta with only the positions that changed this tick, plus the ICAOs
+    /// that disappeared from the live picture.
     Delta {
-        positions: HashMap<FlightId, LivePosition>,
+        changed: HashMap<Icao24, LivePosition>,
+        removed: Vec<Icao24>,
         emitted_at: OffsetDateTime,
     },
 }

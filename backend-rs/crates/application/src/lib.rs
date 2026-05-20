@@ -1,10 +1,21 @@
 //! Application layer.
 //!
 //! Use cases that orchestrate domain entities and ports. No knowledge of
-//! HTTP, MongoDB, gRPC, etc. — those are injected as `Arc<dyn Trait>`.
-//!
-//! Use cases will land here in subsequent commits:
-//! - `flight_updater` — radar stream → state → event bus → persistence
-//! - `aircraft_crawler` — queue → metadata source → repository
-//! - `auth` — anonymous / admin login
-//! - read-side: `flight_query`, `aircraft_query`, `airline_query`
+//! HTTP, MongoDB, gRPC, or any other concrete I/O — those are injected as
+//! `Arc<dyn Trait>`.
+
+pub mod aircraft_crawler;
+pub mod auth_service;
+pub mod error;
+pub mod flight_updater;
+pub mod live_state;
+pub mod queries;
+
+pub use aircraft_crawler::{AircraftCrawler, AircraftCrawlerConfig};
+pub use auth_service::AuthService;
+pub use error::ApplicationError;
+pub use flight_updater::{FlightUpdater, FlightUpdaterConfig, FlightUpdaterTickReport};
+pub use live_state::LiveState;
+pub use queries::aircraft_query::AircraftQuery;
+pub use queries::airline_query::AirlineQuery;
+pub use queries::flight_query::FlightQuery;
