@@ -11,7 +11,9 @@ pub mod ports;
 pub mod value_objects;
 
 pub use entities::aircraft::{Aircraft, AircraftSource};
+pub use entities::airline::Airline;
 pub use entities::flight::{Flight, FlightId};
+pub use entities::live_snapshot::{LivePosition, LiveSnapshot};
 pub use entities::position_report::{AircraftCategory, PositionReport};
 pub use entities::user::{Role, User, UserId};
 pub use error::DomainError;
