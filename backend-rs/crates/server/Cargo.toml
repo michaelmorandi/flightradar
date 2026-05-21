@@ -24,4 +24,23 @@ flightradar-api = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry-semantic-conventions = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+axum = "0.7"
+axum-extra = { version = "0.9", features = ["cookie-private"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+serde_json = { workspace = true }
+futures = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
