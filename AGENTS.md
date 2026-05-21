@@ -4,23 +4,22 @@ Guide for agents (and humans) working in this repository.
 
 ## Repository at a glance
 
-Flightradar is a real-time ADS-B aircraft tracker. Two top-level apps:
+Flightradar is a real-time ADS-B aircraft tracker.
 
 - `frontend/` — Vue 3 + TypeScript + Vite, served by nginx in production.
-- `backend/` — **Python FastAPI** (current production backend).
-- `backend-rs/` — **Rust workspace** (in-progress rewrite). On completion it
-  will replace `backend/` and the Python tree will be deleted.
+- `backend-rs/` — Rust cargo workspace (9 crates) — the only backend.
+- `resources/` — static reference data (`operators.json`,
+  `mil_ranges.json`) copied into the runtime image at build time.
+- `contrib/` — nginx, supervisord, container entrypoint.
 
-Also: `contrib/` (nginx, supervisord, entrypoint), `docs/`, `docker-compose.yml`.
+The previous Python FastAPI backend has been removed; the Rust workspace
+is the authoritative implementation.
 
 ## Migration status
 
-The Rust backend is feature-complete on the
-`claude/plan-rust-migration-T0Zet` branch and the Docker image is now
-built from it. The Python `backend/` tree is retained only as the source
-of the static `resources/` files (`mil_ranges.json`, `operators.json`)
-and the legacy `adsb.proto`; deletion is a follow-up once production
-cutover is verified.
+Complete. Both production deploy and frontend talk to the Rust backend.
+The data migration binary (`flightradar-migrate`) handles the one-shot
+schema rename when upgrading an existing Mongo database.
 
 The plan, agreed on with the project owner:
 
@@ -250,19 +249,6 @@ docker compose up -d
 
 # Tail
 docker compose logs -f flightradar
-```
-
-### Python backend (legacy, kept for reference data only)
-
-The Python tree under `backend/` is no longer wired into the Docker
-image; only its `resources/operators.json` and `resources/mil_ranges.json`
-are copied in at build time. Run the legacy app if you want to compare
-behaviour:
-
-```bash
-cd backend
-uv sync
-uv run uvicorn flightradar:app --reload --port 8083
 ```
 
 ### Frontend

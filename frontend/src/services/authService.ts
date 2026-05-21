@@ -1,37 +1,24 @@
 /**
- * Authentication Service
+ * Authentication service for the Rust backend.
  *
- * Handles authentication via fastapi-users JWT cookie flow.
- * Implements automatic token refresh to maintain session without user intervention.
- *
- * Authentication Flow:
- * 1. POST /auth/jwt/login with email/password
- * 2. Receive JWT as HTTP-only cookie
- * 3. Auto-refresh before expiration
- *
- * Admin Authentication:
- * - Admin users can login via adminLogin()
- * - Admin state is restored from cookie on page reload
- * - Admin logout falls back to anonymous auth
+ * Auth model:
+ *   - Encrypted HTTP-only cookie `fr_session` set by the server.
+ *   - JSON login (admin) and credential-free anonymous login.
+ *   - `expires_at` returned on login drives the refresh timer; we
+ *     refresh `REFRESH_BUFFER_MS` before expiry by re-running anonymous
+ *     login (anonymous) or by calling `/auth/me` (admin, since we don't
+ *     keep the password in memory).
  */
 
 import axios, { type AxiosInstance } from 'axios';
 import { config } from '@/config';
+import type { LoginResponse, UserInfo } from '@/model/backendModel';
 
 /** Refresh token 2 minutes before expiry */
 const REFRESH_BUFFER_MS = 2 * 60 * 1000;
 
-/** Token lifetime in seconds (must match backend) */
-const TOKEN_LIFETIME_SECONDS = 900; // 15 minutes
-
-/** Admin user email */
-const ADMIN_EMAIL = 'admin@system.local';
-
-interface UserInfo {
-  email: string;
-  role: string;
-  is_admin: boolean;
-}
+/** Fallback token lifetime when the server doesn't report one. */
+const FALLBACK_LIFETIME_SECONDS = 900;
 
 export class AuthService {
   private axios: AxiosInstance;
@@ -39,89 +26,56 @@ export class AuthService {
   private refreshTimer: number | null = null;
   private isAuthenticated = false;
   private _isAdmin = false;
-  private adminPassword: string | null = null;
 
   constructor() {
-    this.axios = axios.create({
-      withCredentials: true, // Required for cookies
-    });
-
+    this.axios = axios.create({ withCredentials: true });
     this.apiUrl = config.flightApiUrl || '';
   }
 
-  /**
-   * Check if authentication is initialized.
-   */
   public isAuth(): boolean {
     return this.isAuthenticated;
   }
 
-  /**
-   * Check if current user is admin.
-   */
   public isAdmin(): boolean {
     return this._isAdmin;
   }
 
-  /**
-   * Check current session status by calling /auth/me.
-   * Returns user info if authenticated, null otherwise.
-   */
   private async checkSession(): Promise<UserInfo | null> {
     try {
       const response = await this.axios.get<UserInfo>(`${this.apiUrl}/auth/me`);
-      if (response.status === 200) {
-        return response.data;
-      }
-      return null;
+      return response.status === 200 ? response.data : null;
     } catch {
       return null;
     }
   }
 
   /**
-   * Initialize authentication.
-   *
-   * First checks if there's an existing valid session (e.g., after page reload).
-   * If the session is admin, restores admin state.
-   * Otherwise, authenticates as anonymous.
-   *
-   * @throws Error if authentication fails
+   * Initialise auth. Picks up an existing session if the cookie is
+   * still valid; otherwise logs in anonymously.
    */
   public async initialize(): Promise<void> {
     if (!this.apiUrl) {
       throw new Error('Flight API URL not configured');
     }
+    console.log('[Auth] Initialising authentication...');
 
-    console.log('[Auth] Initializing authentication...');
-
-    // First, check if we have an existing valid session
-    const existingSession = await this.checkSession();
-
-    if (existingSession) {
-      console.log(`[Auth] Existing session found: ${existingSession.role}`);
+    const existing = await this.checkSession();
+    if (existing) {
+      console.log(`[Auth] Existing session found: ${existing.role}`);
       this.isAuthenticated = true;
-      this._isAdmin = existingSession.is_admin;
-
-      if (this._isAdmin) {
-        console.log('[Auth] Restored admin session');
-      }
-
-      // Schedule token refresh
-      this.scheduleRefresh(TOKEN_LIFETIME_SECONDS);
+      this._isAdmin = existing.is_admin;
+      // We have no `expires_at` for a recovered cookie; refresh on the
+      // safe-side schedule.
+      this.scheduleRefresh(FALLBACK_LIFETIME_SECONDS);
       return;
     }
 
-    // No existing session, authenticate as anonymous
     try {
-      await this.anonymousLogin();
-
+      const expiresIn = await this.anonymousLogin();
       this.isAuthenticated = true;
       this._isAdmin = false;
-      console.log('[Auth] Authentication successful');
-
-      // Schedule token refresh
-      this.scheduleRefresh(TOKEN_LIFETIME_SECONDS);
+      console.log('[Auth] Authenticated anonymously');
+      this.scheduleRefresh(expiresIn);
     } catch (error) {
       this.isAuthenticated = false;
       this._isAdmin = false;
@@ -130,203 +84,124 @@ export class AuthService {
     }
   }
 
-  /**
-   * Obtain an anonymous session via the backend's secret-free endpoint.
-   * No credentials are required or sent from the client.
-   */
-  private async anonymousLogin(): Promise<void> {
-    const response = await this.axios.post(`${this.apiUrl}/auth/anonymous`);
-    if (response.status !== 200 && response.status !== 204) {
+  /** POST /auth/anonymous. Returns the seconds until expiry. */
+  private async anonymousLogin(): Promise<number> {
+    const response = await this.axios.post<LoginResponse>(
+      `${this.apiUrl}/auth/anonymous`,
+    );
+    if (response.status !== 200) {
       throw new Error(`Anonymous login failed: ${response.statusText}`);
     }
+    return secondsUntil(response.data.expires_at);
   }
 
   /**
-   * Login with email and password.
-   *
-   * @param email User email
-   * @param password User password
+   * Email/password login. The Rust backend authorises admin or regular
+   * users through the same endpoint; admin role is read from the
+   * returned `user.is_admin` flag.
    */
-  public async login(email: string, password: string): Promise<void> {
-    const formData = new URLSearchParams();
-    formData.append('username', email); // fastapi-users uses 'username' field
-    formData.append('password', password);
-
-    const response = await this.axios.post(`${this.apiUrl}/auth/jwt/login`, formData, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-    });
-
-    if (response.status !== 200 && response.status !== 204) {
+  public async login(email: string, password: string): Promise<UserInfo> {
+    const response = await this.axios.post<LoginResponse>(
+      `${this.apiUrl}/auth/login`,
+      { email, password },
+    );
+    if (response.status !== 200) {
       throw new Error(`Login failed: ${response.statusText}`);
     }
+    this.isAuthenticated = true;
+    this._isAdmin = response.data.user.is_admin;
+    this.scheduleRefresh(secondsUntil(response.data.expires_at));
+    return response.data.user;
   }
 
   /**
-   * Login as admin user using the dedicated admin login endpoint.
-   * This endpoint returns 401 on failure (not 400 like the standard endpoint).
-   *
-   * @param password Admin password
-   * @throws Error if login fails
+   * Convenience wrapper preserved for the AdminLogin.vue UI. Same
+   * endpoint as `login()`; the admin email is the operator-configured
+   * `ADMIN_EMAIL` on the backend.
    */
-  public async adminLogin(password: string): Promise<void> {
-    console.log('[Auth] Logging in as admin...');
-
-    const formData = new URLSearchParams();
-    formData.append('username', ADMIN_EMAIL);
-    formData.append('password', password);
-
-    try {
-      const response = await this.axios.post(`${this.apiUrl}/admin/login`, formData, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-      });
-
-      if (response.status !== 200) {
-        throw new Error('Login failed');
-      }
-
-      this._isAdmin = true;
-      this.adminPassword = password;
-      this.isAuthenticated = true;
-      console.log('[Auth] Admin login successful');
-
-      // Schedule token refresh for admin
-      this.scheduleRefresh(TOKEN_LIFETIME_SECONDS);
-    } catch (error) {
-      console.error('[Auth] Admin login failed:', error);
-      throw new Error('Invalid admin credentials');
+  public async adminLogin(email: string, password: string): Promise<void> {
+    const user = await this.login(email, password);
+    if (!user.is_admin) {
+      throw new Error('Account is not an admin');
     }
   }
 
   /**
-   * Logout admin and fall back to anonymous auth.
+   * Log out the current session and fall back to anonymous.
    */
   public async adminLogout(): Promise<void> {
-    console.log('[Auth] Admin logout, falling back to anonymous...');
-
     if (this.refreshTimer !== null) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
     }
-
     this._isAdmin = false;
-    this.adminPassword = null;
-
     try {
-      // Log out first
-      await this.axios.post(`${this.apiUrl}/auth/jwt/logout`);
+      await this.axios.post(`${this.apiUrl}/auth/logout`);
     } catch (error) {
       console.error('[Auth] Logout request failed:', error);
     }
-
-    // Re-authenticate as anonymous
     try {
-      await this.anonymousLogin();
+      const expiresIn = await this.anonymousLogin();
       this.isAuthenticated = true;
-      console.log('[Auth] Fallback to anonymous auth successful');
-      this.scheduleRefresh(TOKEN_LIFETIME_SECONDS);
+      this.scheduleRefresh(expiresIn);
     } catch (error) {
       this.isAuthenticated = false;
       console.error('[Auth] Fallback to anonymous auth failed:', error);
     }
   }
 
+  /** Hard logout — no fallback. */
+  public async logout(): Promise<void> {
+    if (this.refreshTimer !== null) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+    try {
+      await this.axios.post(`${this.apiUrl}/auth/logout`);
+    } catch (error) {
+      console.error('[Auth] Logout request failed:', error);
+    }
+    this.isAuthenticated = false;
+    this._isAdmin = false;
+  }
+
   /**
-   * Refresh the authentication token.
-   *
-   * For admin sessions without stored password, checks if session is still valid.
-   * Otherwise re-logins with stored credentials.
+   * Refresh the session. Admins (no password in memory) bounce through
+   * /auth/me; anonymous sessions issue a fresh anonymous login.
    */
   public async refresh(): Promise<void> {
     if (!this.apiUrl) {
-      throw new Error('Authentication not properly configured');
+      throw new Error('Authentication not configured');
     }
-
-    console.log('[Auth] Refreshing token...');
-
     try {
-      if (this._isAdmin && this.adminPassword) {
-        // Refresh as admin with stored password using admin endpoint
-        const formData = new URLSearchParams();
-        formData.append('username', ADMIN_EMAIL);
-        formData.append('password', this.adminPassword);
-        await this.axios.post(`${this.apiUrl}/admin/login`, formData, {
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        });
-        console.log('[Auth] Admin token refreshed successfully');
-      } else if (this._isAdmin) {
-        // Admin session restored from cookie - check if still valid
+      if (this._isAdmin) {
         const session = await this.checkSession();
         if (session?.is_admin) {
-          console.log('[Auth] Admin session still valid');
+          this.scheduleRefresh(FALLBACK_LIFETIME_SECONDS);
         } else {
-          // Session expired or no longer admin, fall back to anonymous
           console.log('[Auth] Admin session expired, falling back to anonymous');
           this._isAdmin = false;
-          await this.anonymousLogin();
+          const expiresIn = await this.anonymousLogin();
+          this.scheduleRefresh(expiresIn);
         }
       } else {
-        // Refresh as anonymous
-        await this.anonymousLogin();
-        console.log('[Auth] Token refreshed successfully');
+        const expiresIn = await this.anonymousLogin();
+        this.scheduleRefresh(expiresIn);
       }
-      this.scheduleRefresh(TOKEN_LIFETIME_SECONDS);
     } catch (error) {
       this.isAuthenticated = false;
       this._isAdmin = false;
-      this.adminPassword = null;
       console.error('[Auth] Token refresh failed:', error);
       throw error;
     }
   }
 
-  /**
-   * Logout and clear authentication.
-   *
-   * Clears the JWT cookie and cancels auto-refresh.
-   */
-  public async logout(): Promise<void> {
-    console.log('[Auth] Logging out...');
-
-    if (this.refreshTimer !== null) {
-      clearTimeout(this.refreshTimer);
-      this.refreshTimer = null;
-    }
-
-    try {
-      await this.axios.post(`${this.apiUrl}/auth/jwt/logout`);
-    } catch (error) {
-      console.error('[Auth] Logout request failed:', error);
-    }
-
-    this.isAuthenticated = false;
-    this._isAdmin = false;
-    this.adminPassword = null;
-    console.log('[Auth] Logged out');
-  }
-
-  /**
-   * Schedule automatic token refresh.
-   *
-   * Refreshes the token REFRESH_BUFFER_MS before it expires.
-   *
-   * @private
-   */
   private scheduleRefresh(expiresInSeconds: number): void {
     if (this.refreshTimer !== null) {
       clearTimeout(this.refreshTimer);
     }
-
-    const expiresInMs = expiresInSeconds * 1000;
-    const refreshInMs = Math.max(expiresInMs - REFRESH_BUFFER_MS, 0);
-
-    console.log(
-      `[Auth] Token expires in ${expiresInSeconds}s, will refresh in ${refreshInMs / 1000}s`
-    );
-
+    const expiresInMs = Math.max(expiresInSeconds, 0) * 1000;
+    const refreshInMs = Math.max(expiresInMs - REFRESH_BUFFER_MS, 5_000);
     this.refreshTimer = window.setTimeout(() => {
       this.refresh().catch((error) => {
         console.error('[Auth] Scheduled refresh failed:', error);
@@ -335,14 +210,14 @@ export class AuthService {
   }
 }
 
-// Global singleton instance
+function secondsUntil(isoTimestamp: string): number {
+  const target = Date.parse(isoTimestamp);
+  if (Number.isNaN(target)) return FALLBACK_LIFETIME_SECONDS;
+  return Math.max(0, Math.floor((target - Date.now()) / 1000));
+}
+
 let authServiceInstance: AuthService | null = null;
 
-/**
- * Get the global AuthService singleton.
- *
- * @returns The global AuthService instance
- */
 export function getAuthService(): AuthService {
   if (!authServiceInstance) {
     authServiceInstance = new AuthService();

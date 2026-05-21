@@ -1,9 +1,9 @@
 <template>
   <div class="container text-center">
-    <h1 class="title">{{ flight ? flight.cls : null }}</h1>
+    <h1 class="title">{{ flight ? flight.callsign : null }}</h1>
     <div class="row">
       <div class="col">
-        <DetailField label="Silhouette" :imageUrl="silhouetteUrl(aircraft && aircraft.icaoType ? aircraft.icaoType : '')" :showGenericFallback="true" />
+        <DetailField label="Silhouette" :imageUrl="silhouetteUrl(aircraft && aircraft.type_code ? aircraft.type_code : '')" :showGenericFallback="true" />
       </div>
       <div class="col" v-if="routeInfo">
         <div class="route-field">
@@ -19,7 +19,7 @@
         <DetailField label="24 bit address" :text="flight && flight.icao24 ? flight.icao24.toUpperCase() : null" />
       </div>
       <div class="col">
-        <DetailField label="Registraton" :text="aircraft ? aircraft.reg : null" />
+        <DetailField label="Registraton" :text="aircraft ? aircraft.registration : null" />
       </div>
     </div>
     <div class="row" v-if="currentAltitude || currentGroundSpeed">
@@ -32,7 +32,7 @@
     </div>
     <div class="row" v-if="aircraft">
       <div class="col">
-        <DetailField :label="typeLabel" :text="aircraft ? aircraft.type : null" :tooltip="categoryTooltip" />
+        <DetailField :label="typeLabel" :text="aircraft ? aircraft.type_description : null" :tooltip="categoryTooltip" />
       </div>
     </div>
     <div class="row" v-if="aircraft">
@@ -40,14 +40,14 @@
         <div style="position: relative; height: 45px">
           <div class="operator-label">Operator</div>
           <img
-            v-if="flight?.airlineIcao && !airlineLogoError"
-            :src="`https://raw.githubusercontent.com/Jxck-S/airline-logos/main/fr24_banners/${flight.airlineIcao}.png`"
-            :alt="flight.airlineIcao"
-            :title="aircraft.op"
+            v-if="flight?.airline_icao && !airlineLogoError"
+            :src="`https://raw.githubusercontent.com/Jxck-S/airline-logos/main/fr24_banners/${flight.airline_icao}.png`"
+            :alt="flight.airline_icao"
+            :title="aircraft.operator"
             class="airline-banner"
             @error="airlineLogoError = true"
           />
-          <div v-else class="operator-value">{{ aircraft.op }}</div>
+          <div v-else class="operator-value">{{ aircraft.operator }}</div>
         </div>
       </div>
     </div>
@@ -128,8 +128,8 @@ const loadFlightData = async (flightId: string) => {
       flight.value = flightData;
 
       // Fetch route info if callsign is available
-      if (flightData.cls) {
-        fetchRouteInfo(flightData.cls);
+      if (flightData.callsign) {
+        fetchRouteInfo(flightData.callsign);
       }
 
       // Fetch aircraft details - check cache first
@@ -138,13 +138,14 @@ const loadFlightData = async (flightId: string) => {
         let cachedDetails = aircraftStore.getAircraftDetails(flightData.icao24);
 
         if (cachedDetails) {
-          // Use cached data
+          // Use cached data; map the internal store shape onto the
+          // backend DTO shape that this component renders.
           aircraft.value = {
             icao24: cachedDetails.icao24,
-            type: cachedDetails.type,
-            icaoType: cachedDetails.icaoType,
-            reg: cachedDetails.registration,
-            op: cachedDetails.operator,
+            type_description: cachedDetails.type,
+            type_code: cachedDetails.icaoType,
+            registration: cachedDetails.registration,
+            operator: cachedDetails.operator,
           };
         } else {
           // Not in cache - fetch from API
@@ -155,10 +156,10 @@ const loadFlightData = async (flightId: string) => {
             // Cache the result in the store for future use
             aircraftStore.cacheAircraftDetails({
               icao24: flightData.icao24,
-              type: aircraftData.type,
-              icaoType: aircraftData.icaoType,
-              registration: aircraftData.reg,
-              operator: aircraftData.op,
+              type: aircraftData.type_description,
+              icaoType: aircraftData.type_code,
+              registration: aircraftData.registration,
+              operator: aircraftData.operator,
             });
           }
         }
@@ -249,7 +250,7 @@ const currentGroundSpeed = computed(() => {
 });
 
 const typeLabel = computed(() => {
-  return `Type (${aircraft.value?.icaoType ? aircraft.value.icaoType : 'Type'})`;
+  return `Type (${aircraft.value?.type_code ? aircraft.value.type_code : 'Type'})`;
 });
 
 const categoryTooltip = computed(() => {
@@ -262,8 +263,8 @@ const categoryTooltip = computed(() => {
   }
 
   // Fall back to determining category from aircraft type
-  if ((!category || category === 'default') && (aircraft.value?.icaoType || aircraft.value?.type)) {
-    category = determineAircraftCategory(aircraft.value.icaoType, aircraft.value.type);
+  if ((!category || category === 'default') && (aircraft.value?.type_code || aircraft.value?.type_description)) {
+    category = determineAircraftCategory(aircraft.value.type_code, aircraft.value.type_description);
   }
 
   if (category && category !== 'default') {

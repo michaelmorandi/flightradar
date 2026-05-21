@@ -20,7 +20,7 @@ import { ref, onBeforeUnmount, watch } from 'vue';
 import { config } from '@/config';
 import { getFlightApiService } from '@/services/flightApiService';
 import { FlightPath } from '@/components/map/flightPath';
-import type { TerrestialPosition } from '@/model/backendModel';
+import type { PositionRecord } from '@/model/backendModel';
 import { loadIconSvg, determineAircraftCategory, mapProtobufCategoryToIcon, type AircraftCategory } from '@/utils/aircraftIcons';
 
 declare let H: any;
@@ -138,7 +138,7 @@ const calculateHeading = (lat1: number, lon1: number, lat2: number, lon2: number
   return (heading + 360) % 360;
 };
 
-const createAircraftMarker = async (positions: TerrestialPosition[]) => {
+const createAircraftMarker = async (positions: PositionRecord[]) => {
   if (!map || positions.length === 0) return;
 
   const lastPosition = positions[positions.length - 1];
@@ -152,8 +152,8 @@ const createAircraftMarker = async (positions: TerrestialPosition[]) => {
       lastPosition.lat,
       lastPosition.lon
     );
-  } else if (lastPosition.track !== undefined) {
-    heading = lastPosition.track;
+  } else if (lastPosition.track_deg !== undefined) {
+    heading = lastPosition.track_deg;
   }
 
   try {
@@ -164,12 +164,12 @@ const createAircraftMarker = async (positions: TerrestialPosition[]) => {
     if (flight) {
       const aircraft = await apiService.getAircraft(flight.icao24);
       if (aircraft) {
-        category = determineAircraftCategory(aircraft.type, aircraft.icaoType);
+        category = determineAircraftCategory(aircraft.type_description, aircraft.type_code);
       }
     }
 
-    if (lastPosition.cat !== undefined) {
-      protoCategory = lastPosition.cat;
+    if (lastPosition.category !== undefined) {
+      protoCategory = lastPosition.category;
       category = mapProtobufCategoryToIcon(protoCategory);
     }
 
@@ -227,7 +227,7 @@ const loadFlightPath = async () => {
   }
 };
 
-const fitBounds = (positions: TerrestialPosition[]) => {
+const fitBounds = (positions: PositionRecord[]) => {
   if (!map || positions.length === 0) return;
 
   let minLat = positions[0].lat;

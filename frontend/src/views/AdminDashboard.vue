@@ -29,7 +29,7 @@
         <div class="stat-content">
           <div class="stat-label">Build Info</div>
           <div v-if="!loading" class="build-info">
-            <span class="build-commit" :title="buildInfo.commit_id">{{ buildInfo.commit_id || '—' }}</span>
+            <span class="build-commit" :title="buildInfo.commit">{{ buildInfo.commit || '—' }}</span>
             <span class="build-date">{{ buildInfo.build_timestamp ? new Date(buildInfo.build_timestamp).toLocaleDateString() : '—' }}</span>
           </div>
           <div class="stat-value loading" v-else>
@@ -45,27 +45,8 @@
     </div>
 
     <div class="tabs-container">
-      <div class="tabs-header">
-        <button
-          class="tab-button"
-          :class="{ active: activeTab === 'queue' }"
-          @click="activeTab = 'queue'"
-        >
-          <i class="bi bi-list-check"></i>
-          Crawler Stats
-        </button>
-        <button
-          class="tab-button"
-          :class="{ active: activeTab === 'editor' }"
-          @click="activeTab = 'editor'"
-        >
-          <i class="bi bi-pencil-square"></i>
-          Aircraft Editor
-        </button>
-      </div>
       <div class="tab-content">
-        <CrawlerStatus v-if="activeTab === 'queue'" />
-        <AircraftEditor v-if="activeTab === 'editor'" />
+        <AircraftEditor />
       </div>
     </div>
   </div>
@@ -78,17 +59,15 @@ import Axios from 'axios';
 import { config } from '@/config';
 import { getAuthService } from '@/services/authService';
 import AircraftEditor from '@/components/admin/AircraftEditor.vue';
-import CrawlerStatus from '@/components/admin/CrawlerStatus.vue';
 
 const router = useRouter();
 const authService = getAuthService();
 
 const flightCount = ref(0);
-const buildInfo = ref<{ commit_id: string; build_timestamp: string }>({ commit_id: '', build_timestamp: '' });
+const buildInfo = ref<{ commit: string; build_timestamp: string }>({ commit: '', build_timestamp: '' });
 const loading = ref(true);
 const error = ref('');
 const loggingOut = ref(false);
-const activeTab = ref<'queue' | 'editor'>('queue');
 
 const fetchStats = async () => {
   loading.value = true;

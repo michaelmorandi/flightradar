@@ -17,12 +17,9 @@ export type {
   PositionUpdate,
   AircraftDetails,
   ConnectionStatus,
-  SSEMessageType,
-  SSEPositionsMessage,
-  SSECallsignsMessage,
-  SSECategoriesMessage,
-  SSEFlightPositionMessage,
   RawPositionData,
+  SSESnapshotMessage,
+  SSEDeltaMessage,
 } from './types';
 
 // Helpers (for use by services and composables)

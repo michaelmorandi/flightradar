@@ -1,5 +1,6 @@
 //! HTTP handlers. One module per resource.
 
+pub mod admin;
 pub mod aircraft;
 pub mod airlines;
 pub mod auth;

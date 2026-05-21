@@ -13,12 +13,12 @@ import { getDataIngestionService } from '@/services/dataIngestionService';
 import { MarkerManager } from '@/components/map/MarkerManager';
 import { FlightPath } from '@/components/map/flightPath';
 import { AircraftIcon } from '@/components/map/aircraftElements';
-import type { TerrestialPosition } from '@/model/backendModel';
+import type { PositionRecord } from '@/model/backendModel';
 
 // Dummy position store for MarkerManager compatibility (it needs updatePositions method)
 // We'll create a minimal adapter
 interface PositionStoreAdapter {
-  updatePositions: (positions: Map<string, TerrestialPosition>) => void;
+  updatePositions: (positions: Map<string, PositionRecord>) => void;
   staleThreshold: number;
   purgeStalePositions: () => void;
 }
@@ -178,18 +178,20 @@ export function useMapRenderer(
       return;
     }
 
-    // Convert HistoryPosition to TerrestialPosition for FlightPath
-    const terrestialPositions: TerrestialPosition[] = positions.map(pos => ({
-      icao: '', // Not used by FlightPath
-      callsign: '',
+    // Convert HistoryPosition to PositionRecord for FlightPath (the path
+    // renderer doesn't read icao24/callsign/observed_at, so we feed
+    // empty placeholders).
+    const pathPositions: PositionRecord[] = positions.map(pos => ({
+      icao24: '',
+      observed_at: '',
       lat: pos.lat,
       lon: pos.lon,
-      alt: pos.altitude,
-      track: pos.track,
-      gs: pos.groundSpeed,
+      alt_ft: pos.altitude,
+      track_deg: pos.track,
+      ground_speed_kt: pos.groundSpeed,
     }));
 
-    selectedFlightPath.value.updateFlightPath(terrestialPositions);
+    selectedFlightPath.value.updateFlightPath(pathPositions);
   }
 
   /**

@@ -33,7 +33,13 @@ pub fn build_router(state: AppState, middleware_config: &MiddlewareConfig) -> Ro
         .route("/airlines/:icao", get(handlers::airlines::get_one))
         // live / SSE
         .route("/live/stream", get(handlers::sse::stream_all))
-        .route("/live/stream/:icao24", get(handlers::sse::stream_one));
+        .route("/live/stream/:icao24", get(handlers::sse::stream_one))
+        // admin
+        .route("/admin/stats", get(handlers::admin::stats))
+        .route(
+            "/admin/aircraft/:icao24",
+            get(handlers::admin::get_aircraft).put(handlers::admin::put_aircraft),
+        );
 
     Router::new()
         .nest("/api/v1", api)

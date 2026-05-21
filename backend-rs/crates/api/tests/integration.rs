@@ -23,8 +23,8 @@ use flightradar_api::middleware::MiddlewareConfig;
 use flightradar_api::state::{AppState, AuthState, BuildInfo};
 use flightradar_api::{build_router, ApiError};
 use flightradar_application::{
-    AircraftQuery, AirlineQuery, AuthService, AuthServiceConfig, FlightQuery, LiveState,
-    TokioBroadcastBus,
+    AdminService, AircraftQuery, AirlineQuery, AuthService, AuthServiceConfig, FlightQuery,
+    LiveState, TokioBroadcastBus,
 };
 use flightradar_domain::ports::airline_directory::{AirlineDirectory, AirlineDirectoryError};
 use flightradar_domain::ports::repositories::{
@@ -246,10 +246,15 @@ fn harness() -> Harness {
     ));
     let cookie_key = Key::generate();
 
+    let admin_service = Arc::new(AdminService::new(
+        flights_repo.clone() as Arc<dyn FlightRepository>,
+        aircraft_repo.clone() as Arc<dyn AircraftRepository>,
+    ));
     let state = AppState {
         flights: Arc::new(FlightQuery::new(flights_repo, positions_repo, live)),
         aircraft: Arc::new(AircraftQuery::new(aircraft_repo)),
         airlines: Arc::new(AirlineQuery::new(airline_dir)),
+        admin: admin_service,
         auth: AuthState {
             service: auth_service,
             verifier,
@@ -633,6 +638,142 @@ async fn unused_helpers_compile() {
     let h = harness();
     let _ = &h.cookie_key;
     let _ = ApiError::NotFound;
+}
+
+async fn admin_cookie(h: &Harness) -> String {
+    h.users.upsert_admin().await;
+    let resp = h
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/login")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"email":"admin@example.com","password":"hunter2hunter2hunter2"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    login_cookie(&resp).expect("admin cookie")
+}
+
+#[tokio::test]
+async fn admin_stats_requires_admin_role() {
+    let h = harness();
+    // Anonymous cookie is not enough.
+    let anon = anon_login(&h).await;
+    let resp = h
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/admin/stats")
+                .header(header::COOKIE, &anon)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_stats_returns_flight_count() {
+    let h = harness();
+    let cookie = admin_cookie(&h).await;
+    let resp = h
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/admin/stats")
+                .header(header::COOKIE, cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_json(resp).await;
+    assert_eq!(body["flight_count"], 1); // one seeded flight
+}
+
+#[tokio::test]
+async fn admin_get_aircraft_returns_dto() {
+    let h = harness();
+    let cookie = admin_cookie(&h).await;
+    let resp = h
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/admin/aircraft/ABCDEF")
+                .header(header::COOKIE, cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_json(resp).await;
+    assert_eq!(body["icao24"], "ABCDEF");
+    assert_eq!(body["registration"], "HB-JCS");
+}
+
+#[tokio::test]
+async fn admin_put_aircraft_persists_patch() {
+    let h = harness();
+    let cookie = admin_cookie(&h).await;
+    let resp = h
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/v1/admin/aircraft/ABCDEF")
+                .header(header::COOKIE, &cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"operator":"Swiss","designator":"SWR"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_json(resp).await;
+    assert_eq!(body["operator"], "Swiss");
+    assert_eq!(body["designator"], "SWR");
+    // Source is stamped automatically.
+    assert_eq!(body["source"], "admin");
+    // Untouched fields preserved.
+    assert_eq!(body["registration"], "HB-JCS");
+}
+
+#[tokio::test]
+async fn admin_put_aircraft_creates_when_absent() {
+    let h = harness();
+    let cookie = admin_cookie(&h).await;
+    let resp = h
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/v1/admin/aircraft/000001")
+                .header(header::COOKIE, cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"registration":"NEW-REG"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_json(resp).await;
+    assert_eq!(body["icao24"], "000001");
+    assert_eq!(body["registration"], "NEW-REG");
 }
 
 // ---------------------------------------------------------------------------

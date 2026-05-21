@@ -256,57 +256,35 @@ export interface AircraftDetails {
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
 /**
- * SSE message types from the backend.
- */
-export type SSEMessageType = 'initial' | 'update';
-
-/**
- * Raw positions data from SSE stream.
- */
-export interface SSEPositionsMessage {
-  type: SSEMessageType;
-  positions: Record<string, RawPositionData>;
-}
-
-/**
- * Raw position data as received from backend.
- * Uses backend field names (lat, lon, alt, gs, track, callsign, cat).
+ * Raw position data as received from the Rust backend's SSE stream.
+ * Field names match the wire shape exactly (snake_case).
+ *
+ * Note: positions are keyed by ICAO24 in the parent message; the icao
+ * itself is the map key, not a field inside the value.
  */
 export interface RawPositionData {
-  icao: string;
   lat: number;
   lon: number;
-  alt?: number;
-  gs?: number;
-  track?: number;
+  alt_ft?: number;
+  ground_speed_kt?: number;
+  track_deg?: number;
   callsign?: string;
-  cat?: number;
+  category?: number;
+  /** ISO-8601 timestamp from the backend. */
+  updated_at?: string;
 }
 
-/**
- * Callsigns update from SSE stream.
- */
-export interface SSECallsignsMessage {
-  callsigns: Record<string, string>;
+/** `snapshot` event — initial state for a fresh subscriber. */
+export interface SSESnapshotMessage {
+  positions: Record<string, RawPositionData>;
+  /** ISO-8601 */
+  emitted_at: string;
 }
 
-/**
- * Categories update from SSE stream.
- */
-export interface SSECategoriesMessage {
-  categories: Record<string, number>;
-}
-
-/**
- * Flight position stream message types.
- */
-export interface SSEFlightPositionMessage {
-  type: SSEMessageType;
-  positions?: Record<string, RawPositionData[]>;
-  // For update messages, position data is at the root level
-  lat?: number;
-  lon?: number;
-  alt?: number;
-  gs?: number;
-  track?: number;
+/** `delta` event — incremental change since the previous tick. */
+export interface SSEDeltaMessage {
+  changed: Record<string, RawPositionData>;
+  removed: string[];
+  /** ISO-8601 */
+  emitted_at: string;
 }

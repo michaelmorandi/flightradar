@@ -58,11 +58,10 @@ RUN adduser -D -h /home/radar radar \
 COPY --from=rust-build /work/backend-rs/target/release/flightradar-server \
         /usr/local/bin/flightradar-server
 
-# Reference data (airline directory + military mode-S ranges) carried over
-# from the legacy resources/ tree. These are static lookup tables; the
-# Python code is gone but the data lives on.
-COPY --chown=radar backend/resources/mil_ranges.json \
-        backend/resources/operators.json \
+# Reference data (airline directory + military mode-S ranges). Static
+# lookup tables maintained alongside the source tree.
+COPY --chown=radar resources/mil_ranges.json \
+        resources/operators.json \
         /home/radar/resources/
 
 # Build metadata baked in for the /info endpoint.

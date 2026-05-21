@@ -17,30 +17,27 @@
       <div class="airlines-count">{{ airlines.length }} airlines</div>
       <div
         v-for="airline in airlines"
-        :key="airline.icaoCode"
+        :key="airline.icao"
         class="airline-row"
-        @click="navigateToFlights(airline.icaoCode)"
+        @click="navigateToFlights(airline.icao)"
       >
         <div class="airline-logo-cell">
           <img
-            v-if="!logoErrors[airline.icaoCode]"
-            :src="`https://raw.githubusercontent.com/Jxck-S/airline-logos/main/fr24_banners/${airline.icaoCode}.png`"
-            :alt="airline.icaoCode"
+            v-if="!logoErrors[airline.icao]"
+            :src="`https://raw.githubusercontent.com/Jxck-S/airline-logos/main/fr24_banners/${airline.icao}.png`"
+            :alt="airline.icao"
             class="airline-logo"
-            @error="logoErrors[airline.icaoCode] = true"
+            @error="logoErrors[airline.icao] = true"
           />
-          <div v-else class="airline-code">{{ airline.icaoCode }}</div>
+          <div v-else class="airline-code">{{ airline.icao }}</div>
         </div>
         <div class="airline-info">
           <div class="airline-name">{{ airline.name }}</div>
           <div class="airline-meta">
             <span v-if="airline.country">{{ airline.country }}</span>
             <span v-if="airline.callsign" class="airline-callsign">{{ airline.callsign }}</span>
+            <span v-if="airline.iata" class="airline-iata">{{ airline.iata }}</span>
           </div>
-        </div>
-        <div class="airline-stats">
-          <div class="stat-flights">{{ airline.flightCount }} flights</div>
-          <div class="stat-aircraft">{{ airline.aircraftCount }} aircraft</div>
         </div>
         <div class="airline-arrow">
           <i class="bi bi-chevron-right"></i>
@@ -52,14 +49,14 @@
 
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue';
-import type { AirlineWithStats } from '@/model/backendModel';
+import type { Airline } from '@/model/backendModel';
 import { getFlightApiService } from '@/services/flightApiService';
 import { useViewStore } from '@/stores/viewStore';
 
 const apiService = getFlightApiService();
 const viewStore = useViewStore();
 
-const airlines = ref<AirlineWithStats[]>([]);
+const airlines = ref<Airline[]>([]);
 const loading = ref(false);
 const logoErrors = ref<Record<string, boolean>>({});
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -67,8 +64,9 @@ let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 const loadAirlines = async (query?: string) => {
   loading.value = true;
   try {
-    const response = await apiService.getAirlines(query);
-    airlines.value = response.airlines;
+    // The Rust backend only exposes /airlines/search — surface the query
+    // verbatim and let the directory return up to 50 matches.
+    airlines.value = await apiService.getAirlines(query);
   } catch (err) {
     console.error('Could not fetch airlines:', err);
     airlines.value = [];

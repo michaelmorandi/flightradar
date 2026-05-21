@@ -1,38 +1,54 @@
+/**
+ * Backend DTOs — mirror the Rust API wire shape exactly.
+ *
+ * All field names are snake_case (matching the JSON the Rust backend
+ * emits). Timestamp fields are ISO-8601 strings; convert to Date at the
+ * call site where needed.
+ */
+
 export interface Flight {
   id: string;
   icao24: string;
-  cls: string;
-  airlineIcao?: string;
-  firstCntct: Date;
-  lstCntct: Date;
-  positionCount?: number;
+  callsign?: string;
+  airline_icao?: string;
+  is_military: boolean;
+  /** ISO-8601 */
+  first_contact: string;
+  /** ISO-8601 */
+  last_contact: string;
+  duration_seconds: number;
 }
 
 export interface PaginatedFlightsResponse {
-  flights: Flight[];
-  total: number;
+  items: Flight[];
   page: number;
-  pageSize: number;
-  totalPages: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
 }
 
-export interface TerrestialPosition {
-  icao: string;
-  callsign: string;
+/** Historical position record from GET /flights/{id}/positions. */
+export interface PositionRecord {
+  icao24: string;
   lat: number;
   lon: number;
-  alt?: number;
-  track?: number;
-  gs?: number;
-  cat?: number;  // Aircraft category (compact numeric encoding from AircraftCategory enum)
+  alt_ft?: number;
+  ground_speed_kt?: number;
+  track_deg?: number;
+  callsign?: string;
+  category?: number;
+  /** ISO-8601 */
+  observed_at: string;
 }
 
 export interface Aircraft {
   icao24: string;
-  type?: string;
-  icaoType?: string;
-  reg?: string;
-  op?: string;
+  registration?: string;
+  type_code?: string;
+  type_description?: string;
+  operator?: string;
+  designator?: string;
+  source?: string;
 }
 
 export interface AirportInfo {
@@ -46,34 +62,38 @@ export interface AirportInfo {
 }
 
 export interface Airline {
-  icaoCode: string;
+  icao: string;
   name: string;
   country?: string;
   callsign?: string;
-  iataCode?: string;
-}
-
-export interface AirlineWithStats extends Airline {
-  flightCount: number;
-  aircraftCount: number;
-  lastSeen?: string;
-}
-
-export interface AirlineDetail extends Airline {
-  flightCount: number;
-  aircraftCount: number;
-  firstSeen?: string;
-  lastSeen?: string;
-  aircraft: string[];
-}
-
-export interface AirlinesResponse {
-  airlines: AirlineWithStats[];
-  total: number;
+  iata?: string;
 }
 
 export interface FlightFilters {
   icao24?: string;
   airline?: string;
   q?: string;
+}
+
+export interface UserInfo {
+  id: string;
+  email: string;
+  role: string;
+  display_name?: string;
+  is_admin: boolean;
+}
+
+export interface LoginResponse {
+  user: UserInfo;
+  /** ISO-8601 */
+  expires_at: string;
+}
+
+export interface AdminStats {
+  flight_count: number;
+}
+
+export interface ApiErrorBody {
+  code: string;
+  message: string;
 }

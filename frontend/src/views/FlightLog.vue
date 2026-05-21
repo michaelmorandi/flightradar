@@ -35,8 +35,8 @@
       <template v-if="filters.icao24 && aircraftContext">
         <div class="context-icon">
           <img
-            v-if="aircraftContext.icaoType"
-            :src="silhouetteUrl(aircraftContext.icaoType)"
+            v-if="aircraftContext.type_code"
+            :src="silhouetteUrl(aircraftContext.type_code)"
             class="context-silhouette"
             @error="($event.target as HTMLImageElement).src = '/silhouettes/generic.png'"
           />
@@ -44,12 +44,12 @@
         </div>
         <div class="context-info">
           <div class="context-title">
-            {{ aircraftContext.type || 'Unknown Aircraft' }}
-            <span v-if="aircraftContext.reg" class="context-reg">{{ aircraftContext.reg }}</span>
+            {{ aircraftContext.type_description || 'Unknown Aircraft' }}
+            <span v-if="aircraftContext.registration" class="context-reg">{{ aircraftContext.registration }}</span>
           </div>
           <div class="context-meta">
             <span>ICAO24: {{ filters.icao24.toUpperCase() }}</span>
-            <span v-if="aircraftContext.op">{{ aircraftContext.op }}</span>
+            <span v-if="aircraftContext.operator">{{ aircraftContext.operator }}</span>
           </div>
         </div>
       </template>
@@ -69,10 +69,9 @@
         <div class="context-info">
           <div class="context-title">{{ airlineContext.name }}</div>
           <div class="context-meta">
-            <span>ICAO: {{ airlineContext.icaoCode }}</span>
+            <span>ICAO: {{ airlineContext.icao }}</span>
             <span v-if="airlineContext.country">{{ airlineContext.country }}</span>
-            <span v-if="airlineContext.flightCount">{{ airlineContext.flightCount }} flights</span>
-            <span v-if="airlineContext.aircraftCount">{{ airlineContext.aircraftCount }} aircraft</span>
+            <span v-if="airlineContext.callsign">{{ airlineContext.callsign }}</span>
           </div>
         </div>
       </template>
@@ -140,7 +139,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref, watch, computed, reactive } from 'vue';
-import type { Flight, Aircraft, FlightFilters, AirlineDetail } from '@/model/backendModel';
+import type { Flight, Aircraft, FlightFilters, Airline } from '@/model/backendModel';
 import { getFlightApiService } from '@/services/flightApiService';
 import { useMilitaryStore } from '@/stores/militaryStore';
 import { useViewStore } from '@/stores/viewStore';
@@ -162,7 +161,7 @@ const totalPages = ref(0);
 const filters = reactive<FlightFilters>({});
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 const aircraftContext = ref<Aircraft | null>(null);
-const airlineContext = ref<AirlineDetail | null>(null);
+const airlineContext = ref<Airline | null>(null);
 const airlineLogoError = ref(false);
 
 const hasActiveFilters = computed(() => !!filters.icao24 || !!filters.airline);
@@ -192,9 +191,9 @@ const loadData = async () => {
     const response = await apiService.getFlights(
       PAGE_SIZE, mil, currentPage.value, excludeLive, activeFilters
     );
-    flights.value = response.flights;
+    flights.value = response.items;
     totalFlights.value = response.total;
-    totalPages.value = response.totalPages;
+    totalPages.value = response.total_pages;
     currentPage.value = response.page;
   } catch (err) {
     console.error('Could not fetch flights:', err);

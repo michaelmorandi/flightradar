@@ -5,7 +5,7 @@ use std::sync::Arc;
 use axum_extra::extract::cookie::Key;
 
 use flightradar_application::{
-    AircraftQuery, AirlineQuery, AuthService, FlightQuery, TokioBroadcastBus,
+    AdminService, AircraftQuery, AirlineQuery, AuthService, FlightQuery, TokioBroadcastBus,
 };
 use flightradar_domain::ports::auth::TokenVerifier;
 
@@ -36,6 +36,7 @@ pub struct AppState {
     pub flights: Arc<FlightQuery>,
     pub aircraft: Arc<AircraftQuery>,
     pub airlines: Arc<AirlineQuery>,
+    pub admin: Arc<AdminService>,
     pub auth: AuthState,
     pub events: Arc<TokioBroadcastBus>,
     pub build: BuildInfo,
