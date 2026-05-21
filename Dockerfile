@@ -1,16 +1,19 @@
-# Multi-stage build for production deployment
-# Build metadata passed as arguments (generate with: git describe --tags --always)
+# Multi-stage build for production deployment.
+#
+# Build metadata can be passed as args (generate with: git describe --tags --always)
 ARG BUILD_COMMIT=unknown
 ARG BUILD_TIMESTAMP=unknown
+ARG RUST_VERSION=1.82
 
-# Stage 1: Build frontend
+# ---------------------------------------------------------------------------
+# Stage 1: Frontend
+# ---------------------------------------------------------------------------
 FROM node:lts-alpine AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm install
 COPY frontend/ ./
-# Set VITE environment variables as placeholders for runtime substitution
-# These will be replaced by envsubst at container startup
+# Placeholders substituted at container start by entrypoint.sh.
 ENV VITE_FLIGHT_API_URL='${VITE_FLIGHT_API_URL}'
 ENV VITE_HERE_API_KEY='${VITE_HERE_API_KEY}'
 ENV VITE_MOCK_DATA='${VITE_MOCK_DATA}'
@@ -18,59 +21,67 @@ ENV VITE_ENABLE_INTERPOLATION='${VITE_ENABLE_INTERPOLATION}'
 ENV VITE_UMAMI_ID='${VITE_UMAMI_ID}'
 RUN npm run build
 
-# Stage 2: Production image
-FROM python:3-alpine
+# ---------------------------------------------------------------------------
+# Stage 2: Rust builder
+# ---------------------------------------------------------------------------
+FROM rust:${RUST_VERSION}-alpine AS rust-build
+WORKDIR /work
 
-LABEL maintainer="Michael Morandi"
+# Toolchain prereqs: musl-dev for the linker, cmake/perl for ring,
+# protoc-bin-vendored ships its own binary so no system protoc is needed.
+RUN apk add --no-cache musl-dev pkgconfig openssl-dev openssl-libs-static \
+        cmake make g++ perl
 
-# Install system prerequisites
-RUN apk update && \
-    apk upgrade && \
-    apk add --update tzdata mongodb-tools nginx supervisor gettext && \
-    ln -s /usr/share/zoneinfo/Europe/Zurich /etc/localtime
-
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
-# Create application user
-RUN adduser -D radar && \
-    mkdir -p /var/log/supervisor && \
-    mkdir -p /run/nginx && \
-    chown -R radar:radar /var/log/supervisor
-
-USER radar
-WORKDIR /home/radar
-
-# Install Python dependencies with uv
-COPY --chown=radar backend/pyproject.toml backend/uv.lock ./
-RUN uv sync --frozen
-
-# Install backend application
-COPY --chown=radar backend/app app
-# Generate build metadata from args
+COPY backend-rs/ ./backend-rs/
+WORKDIR /work/backend-rs
 ARG BUILD_COMMIT
 ARG BUILD_TIMESTAMP
-RUN mkdir -p resources && \
-    echo "{\"commit_id\": \"${BUILD_COMMIT}\", \"build_timestamp\": \"${BUILD_TIMESTAMP}\"}" > resources/meta.json
-COPY --chown=radar backend/resources/mil_ranges.json backend/resources/operators.json resources/
-COPY --chown=radar backend/flightradar.py ./
+ENV BUILD_COMMIT=${BUILD_COMMIT} \
+    BUILD_TIMESTAMP=${BUILD_TIMESTAMP}
+RUN cargo build --release --bin flightradar-server
 
-# Copy frontend build from previous stage
-USER root
+# ---------------------------------------------------------------------------
+# Stage 3: Runtime
+# ---------------------------------------------------------------------------
+FROM alpine:3 AS runtime
+LABEL maintainer="Michael Morandi"
+
+RUN apk add --no-cache tzdata nginx supervisor gettext ca-certificates libgcc \
+    && ln -s /usr/share/zoneinfo/Europe/Zurich /etc/localtime
+
+# Non-root user for the backend process.
+RUN adduser -D -h /home/radar radar \
+    && mkdir -p /var/log/supervisor /run/nginx /home/radar/resources \
+    && chown -R radar:radar /var/log/supervisor /home/radar
+
+# Backend binary
+COPY --from=rust-build /work/backend-rs/target/release/flightradar-server \
+        /usr/local/bin/flightradar-server
+
+# Reference data (airline directory + military mode-S ranges) carried over
+# from the legacy resources/ tree. These are static lookup tables; the
+# Python code is gone but the data lives on.
+COPY --chown=radar backend/resources/mil_ranges.json \
+        backend/resources/operators.json \
+        /home/radar/resources/
+
+# Build metadata baked in for the /info endpoint.
+ARG BUILD_COMMIT
+ARG BUILD_TIMESTAMP
+ENV BUILD_COMMIT=${BUILD_COMMIT} \
+    BUILD_TIMESTAMP=${BUILD_TIMESTAMP} \
+    AIRLINES_FILE=/home/radar/resources/operators.json
+
+# Frontend assets
 COPY --from=frontend-build /app/frontend/dist /usr/share/nginx/html
 
-# Copy Nginx configuration
+# nginx + supervisor + entrypoint
 COPY contrib/nginx.conf /etc/nginx/http.d/default.conf
-
-# Copy supervisor configuration
 COPY contrib/supervisord.conf /etc/supervisord.conf
-
-# Copy startup script
 COPY contrib/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Expose HTTP port (nginx) and backend port (uvicorn)
+# Ports: nginx on 80 (frontend + proxied API), backend on 8083 (direct).
 EXPOSE 80 8083
 
-# Start both services via supervisor
 ENTRYPOINT ["/entrypoint.sh"]

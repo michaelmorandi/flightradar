@@ -15,10 +15,12 @@ Also: `contrib/` (nginx, supervisord, entrypoint), `docs/`, `docker-compose.yml`
 
 ## Migration status
 
-Big-bang Python → Rust migration is in progress on the
-`claude/plan-rust-migration-T0Zet` branch. Until the Rust backend reaches
-parity, `backend/` is the authoritative implementation. Both trees compile
-side by side; nothing in `backend-rs/` is wired into the Docker image yet.
+The Rust backend is feature-complete on the
+`claude/plan-rust-migration-T0Zet` branch and the Docker image is now
+built from it. The Python `backend/` tree is retained only as the source
+of the static `resources/` files (`mil_ranges.json`, `operators.json`)
+and the legacy `adsb.proto`; deletion is a follow-up once production
+cutover is verified.
 
 The plan, agreed on with the project owner:
 
@@ -227,13 +229,40 @@ cargo fmt --all --check
 > Cargo auto-discovers the workspace from `backend-rs/Cargo.toml`. Either
 > `cd backend-rs/` first, or use `cargo …` from inside the tree.
 
-### Python backend (`backend/`)
+### Data migration (one-shot, after cutover)
+
+```bash
+# Renames legacy Python field names to the new Rust shape and drops
+# the users collection (auth is re-seeded from ADMIN_EMAIL on boot).
+MONGO_URI=mongodb://localhost:27017 \
+MONGO_DB=flightradar \
+    cargo run --bin flightradar-migrate --release
+```
+
+### Docker (production-equivalent image)
+
+```bash
+# Build
+docker compose build
+
+# Run
+docker compose up -d
+
+# Tail
+docker compose logs -f flightradar
+```
+
+### Python backend (legacy, kept for reference data only)
+
+The Python tree under `backend/` is no longer wired into the Docker
+image; only its `resources/operators.json` and `resources/mil_ranges.json`
+are copied in at build time. Run the legacy app if you want to compare
+behaviour:
 
 ```bash
 cd backend
 uv sync
 uv run uvicorn flightradar:app --reload --port 8083
-uv run pytest
 ```
 
 ### Frontend

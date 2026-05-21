@@ -3,34 +3,47 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        BUILD_COMMIT: ${BUILD_COMMIT:-unknown}
+        BUILD_TIMESTAMP: ${BUILD_TIMESTAMP:-unknown}
     container_name: flightradar
     ports:
       - "8080:80"      # Frontend via nginx
       - "8083:8083"    # Backend API direct access
     env_file:
-      - .env  # Docker Compose will read from .env file in the same directory
+      - .env
     environment:
-      # Frontend environment variables (can override .env file values)
+      # Frontend (override .env values at runtime if needed)
       - VITE_FLIGHT_API_URL=${VITE_FLIGHT_API_URL}
       - VITE_HERE_API_KEY=${VITE_HERE_API_KEY}
-      - VITE_MOCK_DATA=${VITE_MOCK_DATA}
-      - VITE_ENABLE_INTERPOLATION=${VITE_ENABLE_INTERPOLATION}
+      - VITE_MOCK_DATA=${VITE_MOCK_DATA:-false}
+      - VITE_ENABLE_INTERPOLATION=${VITE_ENABLE_INTERPOLATION:-true}
+      - VITE_UMAMI_ID=${VITE_UMAMI_ID:-}
 
-      # Backend environment variables (can override .env file values)
-      - MONGODB_URI=${MONGODB_URI}
-      - MONGODB_DB_NAME=${MONGODB_DB_NAME}
-      - GRPC_SERVER_ADDRESS=${GRPC_SERVER_ADDRESS}
-      - SERVICE_TYPE=${SERVICE_TYPE}
-      - DATA_FOLDER=${DATA_FOLDER}
-      - MIL_ONLY=${MIL_ONLY}
-      - DB_RETENTION_MIN=${DB_RETENTION_MIN}
-      - UNKNOWN_AIRCRAFT_CRAWLING=${UNKNOWN_AIRCRAFT_CRAWLING}
-      - NIGHTHAWK_PROXY_URL=${NIGHTHAWK_PROXY_URL:-http://nighthawk-proxy:8000}
-
-      # Authentication environment variables
+      # Backend — required
+      - MONGO_URI=${MONGO_URI}
+      - MONGO_DB=${MONGO_DB}
+      - RADAR_KIND=${RADAR_KIND:-dump1090}
+      - RADAR_ENDPOINT=${RADAR_ENDPOINT}
       - JWT_SECRET=${JWT_SECRET}
-      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-15}
-      - CHALLENGE_EXPIRE_SECONDS=${CHALLENGE_EXPIRE_SECONDS:-60}
+
+      # Backend — optional / tunable
+      - BIND_ADDR=${BIND_ADDR:-0.0.0.0:8083}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
+      - COOKIE_KEY=${COOKIE_KEY:-}
+      - TOKEN_LIFETIME_SECS=${TOKEN_LIFETIME_SECS:-900}
+      - FLUSH_INTERVAL_SECS=${FLUSH_INTERVAL_SECS:-2}
+      - POSITION_TTL_SECS=${POSITION_TTL_SECS:-60}
+      - MILITARY_ONLY=${MILITARY_ONLY:-false}
+      - NIGHTHAWK_BASE_URL=${NIGHTHAWK_BASE_URL:-http://nighthawk-proxy:8000}
+      - CRAWLER_ENABLED=${CRAWLER_ENABLED:-false}
+      - CRAWLER_INTERVAL_SECS=${CRAWLER_INTERVAL_SECS:-20}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+
+      # Observability (OTEL)
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - RUST_LOG=${RUST_LOG:-info,hyper=warn,tonic=warn,mongodb=info}
     restart: unless-stopped
 
   nighthawk-proxy:
@@ -40,7 +53,7 @@ services:
 
   # Uncomment if you need MongoDB
   # mongodb:
-  #   image: mongo:latest
+  #   image: mongo:7
   #   container_name: flightradar-mongo
   #   ports:
   #     - "27017:27017"
