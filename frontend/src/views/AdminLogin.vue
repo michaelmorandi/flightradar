@@ -3,18 +3,19 @@
     <div class="login-card">
       <h2 class="login-title">Admin Login</h2>
       <form @submit.prevent="handleLogin" action="/dashboard/login" method="post">
-        <!-- Hidden username for password manager detection -->
-        <input
-          type="text"
-          id="username"
-          name="username"
-          value="admin@system.local"
-          autocomplete="username"
-          class="visually-hidden"
-          tabindex="-1"
-          aria-hidden="true"
-          readonly
-        />
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input
+            type="email"
+            id="email"
+            name="username"
+            v-model="email"
+            :disabled="loading"
+            placeholder="admin@example.com"
+            autocomplete="username"
+            required
+          />
+        </div>
         <div class="form-group">
           <label for="password">Password</label>
           <input
@@ -30,7 +31,7 @@
         <div v-if="error" class="error-message">
           {{ error }}
         </div>
-        <button type="submit" class="login-button" :disabled="loading || !password">
+        <button type="submit" class="login-button" :disabled="loading || !email || !password">
           <span v-if="loading" class="spinner"></span>
           <span v-else>Login</span>
         </button>
@@ -50,21 +51,22 @@ import { getAuthService } from '@/services/authService';
 const router = useRouter();
 const authService = getAuthService();
 
+const email = ref('');
 const password = ref('');
 const loading = ref(false);
 const error = ref('');
 
 const handleLogin = async () => {
-  if (!password.value) return;
+  if (!email.value || !password.value) return;
 
   loading.value = true;
   error.value = '';
 
   try {
-    await authService.adminLogin(password.value);
+    await authService.adminLogin(email.value, password.value);
     router.push('/dashboard');
   } catch (err) {
-    error.value = 'Invalid password';
+    error.value = 'Invalid credentials';
     password.value = '';
   } finally {
     loading.value = false;

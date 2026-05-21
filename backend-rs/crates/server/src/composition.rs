@@ -22,7 +22,7 @@ use flightradar_adapter_mongo::{
 use flightradar_adapter_radar::{Dump1090Config, Dump1090Source, GrpcAdsbConfig, GrpcAdsbSource};
 use flightradar_api::state::{AppState, AuthState, BuildInfo};
 use flightradar_application::{
-    AircraftCrawler, AircraftCrawlerConfig, AircraftQuery, AirlineQuery, AuthService,
+    AdminService, AircraftCrawler, AircraftCrawlerConfig, AircraftQuery, AirlineQuery, AuthService,
     AuthServiceConfig, FlightQuery, FlightUpdater, FlightUpdaterConfig, LiveState,
     TokioBroadcastBus,
 };
@@ -146,10 +146,16 @@ pub async fn build_app(config: &Config, deps: Dependencies) -> Result<ComposedAp
     let aircraft_query = Arc::new(AircraftQuery::new(deps.aircraft_repo.clone()));
     let airline_query = Arc::new(AirlineQuery::new(deps.airline_dir));
 
+    let admin_service = Arc::new(AdminService::new(
+        deps.flight_repo.clone(),
+        deps.aircraft_repo.clone(),
+    ));
+
     let state = AppState {
         flights: flight_query,
         aircraft: aircraft_query,
         airlines: airline_query,
+        admin: admin_service,
         auth: AuthState {
             service: auth_service,
             verifier,

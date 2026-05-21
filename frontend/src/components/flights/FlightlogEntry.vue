@@ -16,22 +16,22 @@
           @error="onImageError"
         />
       </div>
-      <div class="callsign" v-if="flight.cls">
+      <div class="callsign" v-if="flight.callsign">
         <span
           class="badge text-bg-secondary callsign-badge"
-          :class="{ 'has-airline': !!flight.airlineIcao }"
+          :class="{ 'has-airline': !!flight.airline_icao }"
           @click.stop="onCallsignClick"
-          :title="flight.airlineIcao ? `Show all ${flight.airlineIcao} flights` : undefined"
-        >{{ flight.cls }}</span>
+          :title="flight.airline_icao ? `Show all ${flight.airline_icao} flights` : undefined"
+        >{{ flight.callsign }}</span>
       </div>
       <div v-if="singleAircraft" class="flight-time">{{ flightTimestamp }}</div>
       <div v-if="!singleAircraft" class="aircraftType">{{ aircaftTypeTruncated }}</div>
       <div
         v-if="!singleAircraft"
         class="operator"
-        :class="{ 'operator-clickable': !!flight.airlineIcao }"
+        :class="{ 'operator-clickable': !!flight.airline_icao }"
         @click.stop="onOperatorClick"
-        :title="flight.airlineIcao ? `Show all ${flight.airlineIcao} flights` : undefined"
+        :title="flight.airline_icao ? `Show all ${flight.airline_icao} flights` : undefined"
       >{{ aircaftOperatorTruncated }}</div>
       <button
         v-if="hasPositions"
@@ -85,10 +85,10 @@ const showMap = ref(false);
 const imageError = ref(false);
 
 const silhouetteSrc = computed(() => {
-  if (imageError.value || !aircraft.value.icaoType) {
+  if (imageError.value || !aircraft.value.type_code) {
     return GENERIC_SILHOUETTE;
   }
-  return silhouetteUrl(aircraft.value.icaoType);
+  return silhouetteUrl(aircraft.value.type_code);
 });
 
 const onImageError = () => {
@@ -108,7 +108,7 @@ onMounted(async () => {
 
 const operatorTooltip = computed(() => {
   let tooltipContent = `<strong>ICAO24: </strong> ${props.flight?.icao24?.toUpperCase()}<br/>`;
-  if (aircraft.value.reg) tooltipContent += `<strong>Registration:</strong> ${aircraft.value.reg}<br/>`;
+  if (aircraft.value.registration) tooltipContent += `<strong>Registration:</strong> ${aircraft.value.registration}<br/>`;
   tooltipContent += `<small style="color:#6ea8fe">Click icon to show all flights</small>`;
   if (!isLive.value) {
     tooltipContent += `<br/>${timestampTooltip.value}`;
@@ -140,30 +140,33 @@ const getTimestampString = (timestamp: Date): string => {
 };
 
 const timestampTooltip = computed(() => {
-  const lastContact = new Date(props.flight.lstCntct);
+  const lastContact = new Date(props.flight.last_contact);
   const lastContactStr: string = getTimestampString(lastContact);
   return `<i class="bi bi-radar"></i> ${lastContactStr}`;
 });
 
 const flightTimestamp = computed(() => {
-  return getTimestampString(new Date(props.flight.firstCntct));
+  return getTimestampString(new Date(props.flight.first_contact));
 });
 
 const isLive = computed(() => {
-  const lastContact = new Date(props.flight.lstCntct);
+  const lastContact = new Date(props.flight.last_contact);
   return differenceInMinutes(new Date(), lastContact) < 5;
 });
 
 const hasPositions = computed(() => {
-  return props.flight.positionCount !== undefined && props.flight.positionCount > 0;
+  // The Rust backend no longer reports a per-flight position count;
+  // treat any flight that has lasted more than a second as having a
+  // recorded track.
+  return props.flight.duration_seconds > 0;
 });
 
 const aircaftOperatorTruncated = computed(() => {
-  return truncate(aircraft.value.op, 28);
+  return truncate(aircraft.value.operator, 28);
 });
 
 const aircaftTypeTruncated = computed(() => {
-  return truncate(aircraft.value.type, 37);
+  return truncate(aircraft.value.type_description, 37);
 });
 
 const toggleMap = () => {
@@ -176,14 +179,14 @@ const toggleMap = () => {
 };
 
 const onCallsignClick = () => {
-  if (props.flight.airlineIcao) {
-    emit('filter-airline', props.flight.airlineIcao);
+  if (props.flight.airline_icao) {
+    emit('filter-airline', props.flight.airline_icao);
   }
 };
 
 const onOperatorClick = () => {
-  if (props.flight.airlineIcao) {
-    emit('filter-airline', props.flight.airlineIcao);
+  if (props.flight.airline_icao) {
+    emit('filter-airline', props.flight.airline_icao);
   }
 };
 

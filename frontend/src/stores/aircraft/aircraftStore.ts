@@ -268,6 +268,21 @@ export const useAircraftStore = defineStore('aircraft', () => {
     connectionStatus.value = status;
   }
 
+  /**
+   * Remove a set of aircraft from the store (driven by SSE `delta.removed`).
+   * Keys are ICAO24 strings — the same value the store uses for `id`
+   * under the Rust backend.
+   */
+  function removeAircraft(ids: string[]) {
+    if (ids.length === 0) return;
+    const newMap = new Map(aircraft.value);
+    let mutated = false;
+    for (const id of ids) {
+      if (newMap.delete(id)) mutated = true;
+    }
+    if (mutated) aircraft.value = newMap;
+  }
+
   // ═══════════════════════════════════════════════════════════
   // ACTIONS - Queries
   // ═══════════════════════════════════════════════════════════
@@ -431,6 +446,7 @@ export const useAircraftStore = defineStore('aircraft', () => {
     updatePositions,
     updateCallsigns,
     updateCategories,
+    removeAircraft,
     cacheAircraftDetails,
 
     // Actions - Connection

@@ -142,10 +142,10 @@ export class AircraftDetailsService {
         const data = response.data;
         return {
           icao24: data.icao24 || icao24,
-          type: data.type,
-          icaoType: data.icaoType,
-          registration: data.reg,
-          operator: data.op,
+          type: data.type_description,
+          icaoType: data.type_code,
+          registration: data.registration,
+          operator: data.operator,
         };
       }
 

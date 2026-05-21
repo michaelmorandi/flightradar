@@ -4,6 +4,7 @@
 //! HTTP, MongoDB, gRPC, or any other concrete I/O — those are injected as
 //! `Arc<dyn Trait>`.
 
+pub mod admin;
 pub mod aircraft_crawler;
 pub mod auth_service;
 pub mod error;
@@ -12,6 +13,7 @@ pub mod flight_updater;
 pub mod live_state;
 pub mod queries;
 
+pub use admin::{AdminService, AdminStats, AircraftPatch};
 pub use aircraft_crawler::{AircraftCrawler, AircraftCrawlerConfig};
 pub use auth_service::{AuthService, AuthServiceConfig};
 pub use error::ApplicationError;

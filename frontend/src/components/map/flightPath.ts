@@ -1,4 +1,4 @@
-import { TerrestialPosition } from '@/model/backendModel';
+import { PositionRecord } from '@/model/backendModel';
 
 // Here Maps API interfaces
 declare let H: {
@@ -139,7 +139,7 @@ export class FlightPath {
     return `#${highestColor.r.toString(16).padStart(2, '0')}${highestColor.g.toString(16).padStart(2, '0')}${highestColor.b.toString(16).padStart(2, '0')}`;
   }
 
-  public createFlightPath(positions: TerrestialPosition[]) {
+  public createFlightPath(positions: PositionRecord[]) {
     if (positions.length > 1) {
       if (this.polyLine || this.pathSegments.length > 0) {
         this.removeFlightPath();
@@ -154,8 +154,8 @@ export class FlightPath {
 
         const distanceNM = this.calculateDistanceApprox(currentPos.lat, currentPos.lon, nextPos.lat, nextPos.lon);
         const isLargeGap = distanceNM >= this.LARGE_GAP_THRESHOLD_NM;
-        const hasAltitude = currentPos.alt != null && nextPos.alt != null;      
-        const avgAltitude = hasAltitude ? (currentPos.alt! + nextPos.alt!) / 2 : 0;
+        const hasAltitude = currentPos.alt_ft != null && nextPos.alt_ft != null;      
+        const avgAltitude = hasAltitude ? (currentPos.alt_ft! + nextPos.alt_ft!) / 2 : 0;
 
         const lineString = new H.geo.LineString();
         lineString.pushPoint({ lat: currentPos.lat, lng: currentPos.lon });
@@ -184,7 +184,7 @@ export class FlightPath {
     }
   }
 
-  public updateFlightPath(positions: TerrestialPosition[]) {
+  public updateFlightPath(positions: PositionRecord[]) {
     if (positions.length <= 1) {
       return;
     }
@@ -210,8 +210,8 @@ export class FlightPath {
 
       const distanceNM = this.calculateDistanceApprox(currentPos.lat, currentPos.lon, nextPos.lat, nextPos.lon);
       const isLargeGap = distanceNM >= this.LARGE_GAP_THRESHOLD_NM;
-      const hasAltitude = currentPos.alt != null && nextPos.alt != null;      
-      const avgAltitude = hasAltitude ? (currentPos.alt! + nextPos.alt!) / 2 : 0;
+      const hasAltitude = currentPos.alt_ft != null && nextPos.alt_ft != null;      
+      const avgAltitude = hasAltitude ? (currentPos.alt_ft! + nextPos.alt_ft!) / 2 : 0;
 
       const lineString = new H.geo.LineString();
       lineString.pushPoint({ lat: currentPos.lat, lng: currentPos.lon });

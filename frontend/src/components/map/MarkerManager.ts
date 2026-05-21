@@ -1,4 +1,4 @@
-import { TerrestialPosition } from '@/model/backendModel';
+import { PositionRecord } from '@/model/backendModel';
 import { AircraftIcon, AircraftMarker } from '@/components/map/aircraftElements';
 import { HereCoordinates } from '@/components/map/flightPath';
 import { differenceInSeconds } from 'date-fns';
@@ -8,7 +8,7 @@ import { differenceInSeconds } from 'date-fns';
  * This allows MarkerManager to work with different store implementations.
  */
 export interface PositionStoreAdapter {
-  updatePositions: (positions: Map<string, TerrestialPosition>) => void;
+  updatePositions: (positions: Map<string, PositionRecord>) => void;
   staleThreshold: number;
   purgeStalePositions: () => void;
 }
@@ -97,14 +97,14 @@ export class MarkerManager {
   }
 
   /**
-   * Convert a TerrestialPosition to HereCoordinates with heading.
+   * Convert a PositionRecord to HereCoordinates with heading.
    * Returns undefined heading if no valid heading can be determined.
    * Aircraft without valid heading should not be displayed on the map.
    */
-  convertToHereCoords(flPos: TerrestialPosition, positions?: Map<string, TerrestialPosition>, flightId?: string): HereCoordinates {
+  convertToHereCoords(flPos: PositionRecord, positions?: Map<string, PositionRecord>, flightId?: string): HereCoordinates {
     // 1. Use track from position data if available (most reliable)
-    if (flPos.track !== undefined && flPos.track !== null) {
-      return { lat: Number(flPos.lat), lng: Number(flPos.lon), heading: flPos.track };
+    if (flPos.track_deg !== undefined && flPos.track_deg !== null) {
+      return { lat: Number(flPos.lat), lng: Number(flPos.lon), heading: flPos.track_deg };
     }
 
     // 2. Try to preserve existing heading from marker cache (prevents reset on updates without track)
@@ -116,12 +116,12 @@ export class MarkerManager {
     }
 
     // 3. Calculate heading from position history if available
-    if (positions && flPos.icao) {
+    if (positions && flPos.icao24) {
       const positionEntries = Array.from(positions.entries());
 
       for (let i = positionEntries.length - 1; i >= 0; i--) {
         const [_, prevPos] = positionEntries[i];
-        if (prevPos.icao === flPos.icao && (prevPos.lat !== flPos.lat || prevPos.lon !== flPos.lon)) {
+        if (prevPos.icao24 === flPos.icao24 && (prevPos.lat !== flPos.lat || prevPos.lon !== flPos.lon)) {
           const heading = this.calculateHeading(prevPos.lat, prevPos.lon, flPos.lat, flPos.lon);
           return { lat: Number(flPos.lat), lng: Number(flPos.lon), heading };
         }
@@ -133,10 +133,10 @@ export class MarkerManager {
     return { lat: Number(flPos.lat), lng: Number(flPos.lon), heading: undefined };
   }
 
-  updateAircraftPositions(positions: Map<string, TerrestialPosition>) {
+  updateAircraftPositions(positions: Map<string, PositionRecord>) {
     this.positionStore.updatePositions(positions);
 
-    positions.forEach((pos: TerrestialPosition, flightId: string) => {
+    positions.forEach((pos: PositionRecord, flightId: string) => {
       const coords = this.convertToHereCoords(pos, positions, flightId);
 
       // Skip aircraft without valid heading - they should not be displayed on the map
@@ -148,7 +148,7 @@ export class MarkerManager {
         return;
       }
 
-      this.updateMarker(flightId, coords, pos.gs, pos.callsign, pos.cat);
+      this.updateMarker(flightId, coords, pos.ground_speed_kt, pos.callsign, pos.category);
     });
 
     const now = new Date();

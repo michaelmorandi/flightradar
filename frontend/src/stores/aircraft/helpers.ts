@@ -232,38 +232,37 @@ export function toMapView(aircraft: AircraftState): MapAircraftView | null {
 }
 
 /**
- * Parse raw position data from backend format to PositionUpdate.
+ * Parse raw SSE position data to a PositionUpdate.
+ * `id` is the ICAO24 map key from the parent SSE payload.
  */
 export function parsePositionData(
   id: string,
-  raw: RawPositionData
+  raw: RawPositionData,
 ): PositionUpdate {
   return {
-    icao24: raw.icao,
+    icao24: id,
     lat: raw.lat,
     lon: raw.lon,
-    altitude: raw.alt,
-    groundSpeed: raw.gs,
-    track: raw.track !== undefined ? Math.round(raw.track) : undefined,
+    altitude: raw.alt_ft,
+    groundSpeed: raw.ground_speed_kt,
+    track: raw.track_deg !== undefined ? Math.round(raw.track_deg) : undefined,
     callsign: raw.callsign,
-    category: raw.cat,
+    category: raw.category,
   };
 }
 
-/**
- * Parse raw position data to HistoryPosition for flight path.
- */
+/** Parse raw position data into a HistoryPosition for flight path display. */
 export function parseHistoryPosition(
   raw: RawPositionData,
-  timestamp?: number
+  timestamp?: number,
 ): HistoryPosition {
   return {
     lat: raw.lat,
     lon: raw.lon,
-    altitude: raw.alt,
-    timestamp: timestamp ?? Date.now(),
-    groundSpeed: raw.gs,
-    track: raw.track,
+    altitude: raw.alt_ft,
+    timestamp: timestamp ?? (raw.updated_at ? Date.parse(raw.updated_at) : Date.now()),
+    groundSpeed: raw.ground_speed_kt,
+    track: raw.track_deg,
   };
 }
 

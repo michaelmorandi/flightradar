@@ -50,7 +50,7 @@
           <input
             type="text"
             id="icaoTypeCode"
-            v-model="editForm.icao_type_code"
+            v-model="editForm.type_code"
             placeholder="e.g., A320"
             :disabled="saving"
           />
@@ -79,14 +79,14 @@
         </div>
       </div>
 
-      <div v-if="aircraft.icao_type_designator" class="readonly-info">
+      <div v-if="aircraft.designator" class="readonly-info">
         <span class="info-label">ICAO Designator:</span>
-        <span class="info-value">{{ aircraft.icao_type_designator }}</span>
+        <span class="info-value">{{ aircraft.designator }}</span>
       </div>
 
-      <div v-if="aircraft.last_modified" class="readonly-info">
-        <span class="info-label">Last Modified:</span>
-        <span class="info-value">{{ formatDate(aircraft.last_modified) }}</span>
+      <div v-if="aircraft.source" class="readonly-info">
+        <span class="info-label">Source:</span>
+        <span class="info-value">{{ aircraft.source }}</span>
       </div>
 
       <div class="form-actions">
@@ -117,18 +117,16 @@ import { config } from '@/config';
 interface Aircraft {
   icao24: string;
   registration: string | null;
-  icao_type_code: string | null;
+  type_code: string | null;
   type_description: string | null;
   operator: string | null;
-  icao_type_designator: string | null;
+  designator: string | null;
   source: string | null;
-  first_created: string | null;
-  last_modified: string | null;
 }
 
 interface EditForm {
   registration: string;
-  icao_type_code: string;
+  type_code: string;
   type_description: string;
   operator: string;
 }
@@ -144,14 +142,14 @@ const saveSuccess = ref(false);
 
 const editForm = ref<EditForm>({
   registration: '',
-  icao_type_code: '',
+  type_code: '',
   type_description: '',
   operator: '',
 });
 
 const originalForm = ref<EditForm>({
   registration: '',
-  icao_type_code: '',
+  type_code: '',
   type_description: '',
   operator: '',
 });
@@ -159,19 +157,11 @@ const originalForm = ref<EditForm>({
 const hasChanges = computed(() => {
   return (
     editForm.value.registration !== originalForm.value.registration ||
-    editForm.value.icao_type_code !== originalForm.value.icao_type_code ||
+    editForm.value.type_code !== originalForm.value.type_code ||
     editForm.value.type_description !== originalForm.value.type_description ||
     editForm.value.operator !== originalForm.value.operator
   );
 });
-
-const formatDate = (isoString: string) => {
-  try {
-    return new Date(isoString).toLocaleString();
-  } catch {
-    return isoString;
-  }
-};
 
 const searchAircraft = async () => {
   const icao = searchIcao.value.trim().toUpperCase();
@@ -197,13 +187,11 @@ const searchAircraft = async () => {
       aircraft.value = {
         icao24: icao,
         registration: null,
-        icao_type_code: null,
+        type_code: null,
         type_description: null,
         operator: null,
-        icao_type_designator: null,
+        designator: null,
         source: null,
-        first_created: null,
-        last_modified: null,
       };
       isNew.value = true;
       populateForm(aircraft.value);
@@ -220,7 +208,7 @@ const searchAircraft = async () => {
 const populateForm = (data: Aircraft) => {
   editForm.value = {
     registration: data.registration || '',
-    icao_type_code: data.icao_type_code || '',
+    type_code: data.type_code || '',
     type_description: data.type_description || '',
     operator: data.operator || '',
   };
@@ -247,7 +235,7 @@ const saveAircraft = async () => {
       `${config.flightApiUrl}/admin/aircraft/${aircraft.value.icao24}`,
       {
         registration: editForm.value.registration || null,
-        icao_type_code: editForm.value.icao_type_code || null,
+        type_code: editForm.value.type_code || null,
         type_description: editForm.value.type_description || null,
         operator: editForm.value.operator || null,
       },

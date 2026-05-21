@@ -1,18 +1,26 @@
 /**
- * Data Ingestion Service
+ * Data Ingestion Service — SSE consumer for the Rust backend.
  *
- * Manages SSE connections for live aircraft data.
- * Parses incoming data and updates the aircraft stores.
+ * Two streams:
+ *   - GET /api/v1/live/stream                   (all aircraft)
+ *   - GET /api/v1/live/stream/{icao24}          (single aircraft)
+ *
+ * Both emit two named events:
+ *   - `snapshot` { positions: { [icao24]: LivePosition }, emitted_at }
+ *   - `delta`    { changed:   { [icao24]: LivePosition },
+ *                  removed:   string[],
+ *                  emitted_at }
+ *
+ * `LivePosition` carries `callsign` and `category` inline — there are
+ * no separate callsigns/categories streams any more.
  */
 
 import type {
   PositionUpdate,
   HistoryPosition,
-  SSEPositionsMessage,
-  SSECallsignsMessage,
-  SSECategoriesMessage,
-  SSEFlightPositionMessage,
   RawPositionData,
+  SSEDeltaMessage,
+  SSESnapshotMessage,
 } from '@/stores/aircraft';
 import { useAircraftStore, useFlightHistoryStore, parsePositionData } from '@/stores/aircraft';
 import { config } from '@/config';
@@ -36,16 +44,12 @@ export class DataIngestionService {
     this.apiUrl = config.flightApiUrl || '';
   }
 
-  /**
-   * Connect to the main positions SSE stream.
-   * This is the primary data source for live aircraft positions.
-   */
+  /** Subscribe to the global live-positions stream. */
   connect(): void {
     if (this.positionsEventSource) {
       console.warn('Already connected to positions stream');
       return;
     }
-
     if (!this.apiUrl) {
       console.error('Flight API URL not configured');
       return;
@@ -53,7 +57,6 @@ export class DataIngestionService {
 
     const url = this.getStreamUrl('live/stream');
     const aircraftStore = useAircraftStore();
-
     aircraftStore.setConnectionStatus('connecting');
 
     try {
@@ -69,252 +72,174 @@ export class DataIngestionService {
         aircraftStore.setConnectionStatus('error');
       };
 
-      // Handle position updates
-      this.positionsEventSource.addEventListener('positions', (event) => {
+      this.positionsEventSource.addEventListener('snapshot', (event) => {
         try {
-          const data: SSEPositionsMessage = JSON.parse(event.data);
-          this.processPositionsData(data);
+          const data: SSESnapshotMessage = JSON.parse(event.data);
+          this.applyPositionMap(data.positions, true);
         } catch (error) {
-          console.error('Error processing positions message:', error);
+          console.error('Error processing snapshot event:', error);
         }
       });
 
-      // Handle callsign updates
-      this.positionsEventSource.addEventListener('callsigns', (event) => {
+      this.positionsEventSource.addEventListener('delta', (event) => {
         try {
-          const data: SSECallsignsMessage = JSON.parse(event.data);
-          this.processCallsignsData(data);
+          const data: SSEDeltaMessage = JSON.parse(event.data);
+          this.applyPositionMap(data.changed, false);
+          if (Array.isArray(data.removed) && data.removed.length > 0) {
+            const aircraftStore = useAircraftStore();
+            aircraftStore.removeAircraft(data.removed);
+            for (const id of data.removed) this.lastUpdateTimes.delete(id);
+          }
         } catch (error) {
-          console.error('Error processing callsigns message:', error);
+          console.error('Error processing delta event:', error);
         }
       });
 
-      // Handle category updates
-      this.positionsEventSource.addEventListener('categories', (event) => {
-        try {
-          const data: SSECategoriesMessage = JSON.parse(event.data);
-          this.processCategoriesData(data);
-        } catch (error) {
-          console.error('Error processing categories message:', error);
-        }
-      });
+      // Keep-alive comments don't fire named events; nothing to do.
 
-      // Handle heartbeat (keep-alive)
-      this.positionsEventSource.addEventListener('heartbeat', (event) => {
-        console.debug('Received heartbeat:', event.data);
-      });
-
-      // Start cleanup interval
       this.startCleanupInterval();
-
     } catch (error) {
       console.error('Failed to connect to positions stream:', error);
       aircraftStore.setConnectionStatus('error');
     }
   }
 
-  /**
-   * Disconnect from the main positions SSE stream.
-   */
   disconnect(): void {
     if (this.positionsEventSource) {
       this.positionsEventSource.close();
       this.positionsEventSource = null;
     }
-
     this.stopCleanupInterval();
     this.lastUpdateTimes.clear();
-
     const aircraftStore = useAircraftStore();
     aircraftStore.setConnectionStatus('disconnected');
   }
 
   /**
-   * Subscribe to flight position updates (for path rendering).
+   * Subscribe to per-aircraft live updates. NOTE: the Rust backend keys
+   * the single-aircraft stream by ICAO24, not by internal flight id —
+   * callers must pass the ICAO24 of the aircraft they want to track.
    */
-  subscribeToFlight(flightId: string): void {
-    if (this.flightEventSources.has(flightId)) {
-      console.warn(`Already subscribed to flight ${flightId}`);
+  subscribeToFlight(icao24: string): void {
+    if (this.flightEventSources.has(icao24)) {
+      console.warn(`Already subscribed to ${icao24}`);
       return;
     }
 
-    const url = this.getStreamUrl(`flights/${flightId}/positions/stream`);
+    const url = this.getStreamUrl(`live/stream/${encodeURIComponent(icao24)}`);
     const historyStore = useFlightHistoryStore();
 
-    historyStore.subscribe(flightId);
-    historyStore.setLoading(flightId, true);
+    historyStore.subscribe(icao24);
+    historyStore.setLoading(icao24, true);
 
     try {
       const eventSource = new EventSource(url, { withCredentials: true });
-      this.flightEventSources.set(flightId, eventSource);
+      this.flightEventSources.set(icao24, eventSource);
 
       eventSource.onopen = () => {
-        console.debug(`Flight position stream connected for ${flightId}`);
+        console.debug(`Live stream connected for ${icao24}`);
       };
 
       eventSource.onerror = (error) => {
-        console.error(`Flight position stream error for ${flightId}:`, error);
-        historyStore.setLoading(flightId, false);
+        console.error(`Live stream error for ${icao24}:`, error);
+        historyStore.setLoading(icao24, false);
       };
 
-      // Handle flight position updates
-      eventSource.addEventListener('flight_position', (event) => {
+      eventSource.addEventListener('snapshot', (event) => {
         try {
-          const data: SSEFlightPositionMessage = JSON.parse(event.data);
-          this.processFlightPositionData(flightId, data);
+          const data: SSESnapshotMessage = JSON.parse(event.data);
+          const positions = Object.entries(data.positions || {});
+          const histories: HistoryPosition[] = positions
+            .filter(([id]) => id === icao24)
+            .map(([, pos]) => toHistoryPosition(pos));
+          historyStore.setHistory(icao24, histories);
+          historyStore.setLoading(icao24, false);
         } catch (error) {
-          console.error(`Error processing flight position for ${flightId}:`, error);
+          console.error(`Error processing snapshot for ${icao24}:`, error);
         }
       });
 
-      // Handle heartbeat
-      eventSource.addEventListener('heartbeat', (event) => {
-        console.debug(`Received heartbeat for flight ${flightId}:`, event.data);
+      eventSource.addEventListener('delta', (event) => {
+        try {
+          const data: SSEDeltaMessage = JSON.parse(event.data);
+          const update = data.changed?.[icao24];
+          if (update) {
+            historyStore.addPosition(icao24, toHistoryPosition(update));
+          }
+        } catch (error) {
+          console.error(`Error processing delta for ${icao24}:`, error);
+        }
       });
-
     } catch (error) {
-      console.error(`Failed to subscribe to flight ${flightId}:`, error);
-      historyStore.setLoading(flightId, false);
-      historyStore.unsubscribe(flightId);
+      console.error(`Failed to subscribe to ${icao24}:`, error);
+      historyStore.setLoading(icao24, false);
+      historyStore.unsubscribe(icao24);
     }
   }
 
-  /**
-   * Unsubscribe from flight position updates.
-   */
-  unsubscribeFromFlight(flightId: string): void {
-    const eventSource = this.flightEventSources.get(flightId);
+  unsubscribeFromFlight(icao24: string): void {
+    const eventSource = this.flightEventSources.get(icao24);
     if (eventSource) {
       eventSource.close();
-      this.flightEventSources.delete(flightId);
+      this.flightEventSources.delete(icao24);
     }
-
     const historyStore = useFlightHistoryStore();
-    historyStore.cleanupFlight(flightId, false); // Keep history for display
+    historyStore.cleanupFlight(icao24, false);
   }
 
-  /**
-   * Disconnect all flight subscriptions.
-   */
   disconnectAllFlights(): void {
-    for (const [flightId, eventSource] of this.flightEventSources) {
+    for (const [icao24, eventSource] of this.flightEventSources) {
       eventSource.close();
       const historyStore = useFlightHistoryStore();
-      historyStore.unsubscribe(flightId);
+      historyStore.unsubscribe(icao24);
     }
     this.flightEventSources.clear();
   }
 
-  /**
-   * Disconnect everything.
-   */
   disconnectAll(): void {
     this.disconnect();
     this.disconnectAllFlights();
   }
 
-  /**
-   * Check if connected to main positions stream.
-   */
   isConnected(): boolean {
-    return this.positionsEventSource !== null &&
-           this.positionsEventSource.readyState === EventSource.OPEN;
+    return (
+      this.positionsEventSource !== null &&
+      this.positionsEventSource.readyState === EventSource.OPEN
+    );
   }
 
-  /**
-   * Check if subscribed to a specific flight.
-   */
-  isSubscribedToFlight(flightId: string): boolean {
-    return this.flightEventSources.has(flightId);
+  isSubscribedToFlight(icao24: string): boolean {
+    return this.flightEventSources.has(icao24);
   }
 
   // ═══════════════════════════════════════════════════════════
-  // PRIVATE - Data Processing
+  // PRIVATE — Data processing
   // ═══════════════════════════════════════════════════════════
 
-  private processPositionsData(data: SSEPositionsMessage): void {
-    if (!data.positions) return;
+  private applyPositionMap(
+    positions: Record<string, RawPositionData> | undefined,
+    isInitial: boolean,
+  ): void {
+    if (!positions) return;
 
     const aircraftStore = useAircraftStore();
     const now = Date.now();
-    const isInitial = data.type === 'initial';
+    if (isInitial) this.lastUpdateTimes.clear();
 
-    // Clear last update times for initial load
-    if (isInitial) {
-      this.lastUpdateTimes.clear();
-    }
-
-    // Parse and collect position updates
     const updates = new Map<string, PositionUpdate>();
-
-    for (const [id, rawPos] of Object.entries(data.positions)) {
-      const update = parsePositionData(id, rawPos as RawPositionData);
-      updates.set(id, update);
+    for (const [id, rawPos] of Object.entries(positions)) {
+      updates.set(id, parsePositionData(id, rawPos));
       this.lastUpdateTimes.set(id, now);
     }
-
-    // Update the store
     aircraftStore.updatePositions(updates, isInitial);
   }
 
-  private processCallsignsData(data: SSECallsignsMessage): void {
-    if (!data.callsigns) return;
-
-    const aircraftStore = useAircraftStore();
-    const callsigns = new Map<string, string>(Object.entries(data.callsigns));
-    aircraftStore.updateCallsigns(callsigns);
-  }
-
-  private processCategoriesData(data: SSECategoriesMessage): void {
-    if (!data.categories) return;
-
-    const aircraftStore = useAircraftStore();
-    const categories = new Map<string, number>(Object.entries(data.categories));
-    aircraftStore.updateCategories(categories);
-  }
-
-  private processFlightPositionData(flightId: string, data: SSEFlightPositionMessage): void {
-    const historyStore = useFlightHistoryStore();
-    const now = Date.now();
-
-    if (data.type === 'initial') {
-      // Initial load - set complete history
-      const flightPositions = data.positions?.[flightId];
-      if (Array.isArray(flightPositions)) {
-        const positions: HistoryPosition[] = flightPositions.map((pos, index) => ({
-          lat: pos.lat,
-          lon: pos.lon,
-          altitude: pos.alt,
-          groundSpeed: pos.gs,
-          track: pos.track,
-          timestamp: now - (flightPositions.length - index) * 1000, // Estimate timestamps
-        }));
-        historyStore.setHistory(flightId, positions);
-      }
-      historyStore.setLoading(flightId, false);
-    } else if (data.type === 'update') {
-      // Incremental update - add single position
-      if (data.lat !== undefined && data.lon !== undefined) {
-        const position: HistoryPosition = {
-          lat: data.lat,
-          lon: data.lon,
-          altitude: data.alt,
-          groundSpeed: data.gs,
-          track: data.track,
-          timestamp: now,
-        };
-        historyStore.addPosition(flightId, position);
-      }
-    }
-  }
-
   // ═══════════════════════════════════════════════════════════
-  // PRIVATE - Cleanup
+  // PRIVATE — Cleanup
   // ═══════════════════════════════════════════════════════════
 
   private startCleanupInterval(): void {
     if (this.cleanupInterval !== null) return;
-
     this.cleanupInterval = window.setInterval(() => {
       this.cleanupStaleData();
     }, CLEANUP_INTERVAL_MS);
@@ -330,44 +255,40 @@ export class DataIngestionService {
   private cleanupStaleData(): void {
     const now = Date.now();
     const staleIds: string[] = [];
-
-    // Find stale entries
     for (const [id, lastUpdate] of this.lastUpdateTimes) {
-      if (now - lastUpdate > STALE_TIMEOUT_MS) {
-        staleIds.push(id);
-      }
+      if (now - lastUpdate > STALE_TIMEOUT_MS) staleIds.push(id);
     }
-
-    // Remove from tracking
-    for (const id of staleIds) {
-      this.lastUpdateTimes.delete(id);
-    }
-
-    // Let the store handle actual cleanup based on its own stale threshold
+    for (const id of staleIds) this.lastUpdateTimes.delete(id);
     const aircraftStore = useAircraftStore();
     aircraftStore.purgeStaleAircraft();
   }
 
   // ═══════════════════════════════════════════════════════════
-  // PRIVATE - Utilities
+  // PRIVATE — Utilities
   // ═══════════════════════════════════════════════════════════
 
   private getStreamUrl(path: string): string {
     if (!this.apiUrl) {
       throw new Error('Flight API URL not configured');
     }
-
     const baseUrl = this.apiUrl.endsWith('/') ? this.apiUrl : `${this.apiUrl}/`;
     return `${baseUrl}${path}`;
   }
 }
 
-// Singleton instance
+function toHistoryPosition(raw: RawPositionData): HistoryPosition {
+  return {
+    lat: raw.lat,
+    lon: raw.lon,
+    altitude: raw.alt_ft,
+    groundSpeed: raw.ground_speed_kt,
+    track: raw.track_deg,
+    timestamp: raw.updated_at ? Date.parse(raw.updated_at) : Date.now(),
+  };
+}
+
 let instance: DataIngestionService | null = null;
 
-/**
- * Get the DataIngestionService singleton instance.
- */
 export function getDataIngestionService(): DataIngestionService {
   if (!instance) {
     instance = new DataIngestionService();
@@ -375,10 +296,6 @@ export function getDataIngestionService(): DataIngestionService {
   return instance;
 }
 
-/**
- * Create a new DataIngestionService instance.
- * Use this for testing or when you need a fresh instance.
- */
 export function createDataIngestionService(): DataIngestionService {
   return new DataIngestionService();
 }
