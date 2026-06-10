@@ -35,3 +35,15 @@ pub async fn search(
     let results = state.airlines.search(&q.q, q.limit).await?;
     Ok(Json(results.into_iter().map(Into::into).collect()))
 }
+
+/// List every airline in the directory. Static reference data — there's
+/// no pagination because the whole file (~5k rows) fits in a single
+/// response payload of ~250 KB. The frontend's "Airlines" view depends
+/// on this endpoint to populate the initial list without a search query.
+pub async fn list(
+    State(state): State<AppState>,
+    _: Authenticated,
+) -> Result<Json<Vec<AirlineDto>>, ApiError> {
+    let results = state.airlines.all().await?;
+    Ok(Json(results.into_iter().map(Into::into).collect()))
+}

@@ -12,8 +12,9 @@ use async_trait::async_trait;
 use futures::Stream;
 use reqwest::Client;
 use serde::Deserialize;
+use serde_json::Value;
 use time::OffsetDateTime;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use flightradar_domain::ports::radar_source::{PositionStream, RadarError, RadarSource};
 use flightradar_domain::{Callsign, Icao24, PositionReport};
@@ -67,6 +68,12 @@ impl Dump1090Source {
             .send()
             .await
             .map_err(|e| RadarError::Transport(Box::new(e)))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(RadarError::Unavailable(format!(
+                "dump1090 returned HTTP {status}"
+            )));
+        }
         let body = response
             .text()
             .await
@@ -110,32 +117,28 @@ impl RadarSource for Dump1090Source {
 // JSON parsing
 // ---------------------------------------------------------------------------
 
+/// Top-level envelope. We deliberately accept *anything* in `aircraft`
+/// (`Vec<Value>`) and decode each entry individually, so one malformed
+/// row never poisons a whole poll.
 #[derive(Debug, Deserialize)]
 struct AircraftResponse {
     #[serde(default)]
-    aircraft: Vec<AircraftJson>,
-}
-
-#[derive(Debug, Deserialize)]
-struct AircraftJson {
-    hex: String,
-    #[serde(default)]
-    flight: Option<String>,
-    #[serde(default)]
-    lat: Option<f64>,
-    #[serde(default)]
-    lon: Option<f64>,
-    #[serde(default, alias = "alt_geom", alias = "alt_baro")]
-    alt: Option<i32>,
-    #[serde(default)]
-    gs: Option<f64>,
-    #[serde(default)]
-    track: Option<f64>,
+    aircraft: Vec<Value>,
 }
 
 /// Parse a dump1090 `aircraft.json` body into [`PositionReport`]s.
-/// Aircraft without latitude/longitude are dropped — we cannot place them
-/// on the map and the in-memory state has no use for them.
+///
+/// Lenient by design:
+///   - Each aircraft is decoded individually; failures are logged and
+///     skipped, never propagated up.
+///   - Altitude can be reported as the string `"ground"` (surface
+///     vehicles) — coerced to `0`.
+///   - Either `alt_geom` *or* `alt_baro` may be set; we prefer
+///     `alt_geom` (GNSS) and fall back to `alt_baro`. Some receivers
+///     emit both fields on the same aircraft; we tolerate that too.
+///
+/// Aircraft without lat/lon are dropped — we cannot place them on the
+/// map and the in-memory state has no use for them.
 pub fn parse_aircraft_json(
     body: &str,
     observed_at: OffsetDateTime,
@@ -144,33 +147,64 @@ pub fn parse_aircraft_json(
         serde_json::from_str(body).map_err(|e| RadarError::MalformedPayload(e.to_string()))?;
 
     let mut out = Vec::with_capacity(parsed.aircraft.len());
-    for ac in &parsed.aircraft {
-        let Some(report) = aircraft_to_position_report(ac, observed_at) else {
-            continue;
-        };
-        out.push(report);
+    let mut skipped = 0_usize;
+    for raw in &parsed.aircraft {
+        match decode_aircraft(raw, observed_at) {
+            Some(report) => out.push(report),
+            None => skipped += 1,
+        }
+    }
+    if skipped > 0 {
+        debug!(skipped, kept = out.len(), "dump1090: skipped some entries");
     }
     Ok(out)
 }
 
-fn aircraft_to_position_report(
-    ac: &AircraftJson,
-    observed_at: OffsetDateTime,
-) -> Option<PositionReport> {
-    let icao24 = Icao24::new(&ac.hex).ok()?;
-    let lat = ac.lat?;
-    let lon = ac.lon?;
+fn decode_aircraft(raw: &Value, observed_at: OffsetDateTime) -> Option<PositionReport> {
+    let obj = raw.as_object()?;
+
+    let hex = obj.get("hex").and_then(Value::as_str)?;
+    let icao24 = Icao24::new(hex).ok()?;
+    let lat = obj.get("lat").and_then(Value::as_f64)?;
+    let lon = obj.get("lon").and_then(Value::as_f64)?;
     let mut pr = PositionReport::new(icao24, lat, lon, observed_at).ok()?;
-    pr.altitude_ft = ac.alt;
-    pr.ground_speed_kt = ac.gs;
-    pr.track_deg = ac.track;
-    pr.callsign = ac
-        .flight
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .and_then(|s| Callsign::new(s).ok());
+
+    pr.altitude_ft = decode_altitude(obj);
+    pr.ground_speed_kt = obj.get("gs").and_then(Value::as_f64);
+    pr.track_deg = obj.get("track").and_then(Value::as_f64);
+
+    if let Some(flight) = obj.get("flight").and_then(Value::as_str) {
+        let trimmed = flight.trim();
+        if !trimmed.is_empty() {
+            if let Ok(cs) = Callsign::new(trimmed) {
+                pr.callsign = Some(cs);
+            }
+        }
+    }
     Some(pr)
+}
+
+/// Pick altitude with `alt_geom` preferred, `alt_baro` fallback.
+/// `"ground"` strings (surface vehicles) collapse to `Some(0)`; junk
+/// values yield `None`.
+#[allow(clippy::cast_possible_truncation)] // values clamped to i32 range
+fn decode_altitude(obj: &serde_json::Map<String, Value>) -> Option<i32> {
+    for key in ["alt_geom", "alt_baro"] {
+        if let Some(value) = obj.get(key) {
+            if let Some(n) = value.as_i64() {
+                return Some(n.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32);
+            }
+            if let Some(f) = value.as_f64() {
+                if f.is_finite() {
+                    return Some(f.round().clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32);
+                }
+            }
+            if value.as_str() == Some("ground") {
+                return Some(0);
+            }
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +255,57 @@ mod tests {
         ]}"#;
         let parsed = parse_aircraft_json(body, t()).unwrap();
         assert_eq!(parsed[0].altitude_ft, Some(25_000));
+    }
+
+    #[test]
+    fn alt_geom_preferred_when_both_present() {
+        // Real dump1090 emits both fields on the same aircraft.
+        // We prefer alt_geom (GNSS) and tolerate the duplicate without
+        // erroring out the way the old strict parser did.
+        let body = r#"{ "aircraft": [
+            { "hex": "abcdef", "lat": 47.0, "lon": 8.0,
+              "alt_geom": 25000, "alt_baro": 25200 }
+        ]}"#;
+        let parsed = parse_aircraft_json(body, t()).unwrap();
+        assert_eq!(parsed[0].altitude_ft, Some(25_000));
+    }
+
+    #[test]
+    fn ground_altitude_coerced_to_zero() {
+        // Surface vehicles emit `"alt_baro": "ground"`; the strict
+        // parser used to drop the entire batch on this.
+        let body = r#"{ "aircraft": [
+            { "hex": "abcdef", "lat": 47.0, "lon": 8.0, "alt_baro": "ground" }
+        ]}"#;
+        let parsed = parse_aircraft_json(body, t()).unwrap();
+        assert_eq!(parsed[0].altitude_ft, Some(0));
+    }
+
+    #[test]
+    fn one_bad_aircraft_does_not_kill_the_batch() {
+        // A real receiver dumps dozens of aircraft per poll; the old
+        // parser would error on the *whole* batch if any one entry was
+        // malformed. We now decode entries individually.
+        let body = r#"{ "aircraft": [
+            { "hex": "abcdef", "lat": 47.0, "lon": 8.0 },
+            { "hex": "garbage", "lat": "not-a-number" },
+            { "hex": "123456", "lat": 46.0, "lon": 7.0 }
+        ]}"#;
+        let parsed = parse_aircraft_json(body, t()).unwrap();
+        let codes: Vec<_> = parsed
+            .iter()
+            .map(|p| p.icao24.as_str().to_owned())
+            .collect();
+        assert_eq!(codes, vec!["ABCDEF".to_string(), "123456".to_string()]);
+    }
+
+    #[test]
+    fn altitude_as_float_is_rounded() {
+        let body = r#"{ "aircraft": [
+            { "hex": "abcdef", "lat": 47.0, "lon": 8.0, "alt_geom": 30000.6 }
+        ]}"#;
+        let parsed = parse_aircraft_json(body, t()).unwrap();
+        assert_eq!(parsed[0].altitude_ft, Some(30_001));
     }
 
     #[test]

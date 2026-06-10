@@ -106,12 +106,36 @@ onMounted(async () => {
   }
 });
 
+// Bootstrap tooltips are rendered with `html: true`, so anything we
+// stitch into this template literal is parsed as HTML. The aircraft
+// `registration` field comes from a third-party metadata source and
+// (via the admin editor) operator input — both untrusted from this
+// component's perspective. Escape every interpolated value to close
+// the stored-XSS hole.
+const escapeHtml = (raw: string): string =>
+  raw.replace(/[&<>"'`/]/g, (ch) =>
+    ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+      '`': '&#96;',
+      '/': '&#47;',
+    })[ch] ?? ch
+  );
+
 const operatorTooltip = computed(() => {
-  let tooltipContent = `<strong>ICAO24: </strong> ${props.flight?.icao24?.toUpperCase()}<br/>`;
-  if (aircraft.value.registration) tooltipContent += `<strong>Registration:</strong> ${aircraft.value.registration}<br/>`;
+  const icao = escapeHtml(props.flight?.icao24?.toUpperCase() ?? '');
+  let tooltipContent = `<strong>ICAO24: </strong> ${icao}<br/>`;
+  if (aircraft.value.registration) {
+    tooltipContent += `<strong>Registration:</strong> ${escapeHtml(aircraft.value.registration)}<br/>`;
+  }
   tooltipContent += `<small style="color:#6ea8fe">Click icon to show all flights</small>`;
   if (!isLive.value) {
-    tooltipContent += `<br/>${timestampTooltip.value}`;
+    // `timestampTooltip` is a Date-formatted string under our control,
+    // but escape anyway for defence-in-depth.
+    tooltipContent += `<br/>${escapeHtml(timestampTooltip.value)}`;
   }
   return tooltipContent;
 });

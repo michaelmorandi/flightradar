@@ -143,12 +143,24 @@ export class FlightApiService {
   }
 
   /**
-   * Airline search. The Rust backend has no "list all airlines"
-   * endpoint; calling without a query returns an empty array.
+   * Airline listing. With a query string, hits `/airlines/search`
+   * (capped at 50 results). Without one, hits `/airlines`, which
+   * returns the whole static directory — the Airlines view depends on
+   * this so the initial load isn't an empty "no airlines observed yet"
+   * state.
    */
   async getAirlines(query?: string): Promise<Airline[]> {
-    if (!this.apiUrl || !query?.trim()) return [];
-    return this.searchAirlines(query, 50);
+    if (!this.apiUrl) return [];
+    if (query?.trim()) return this.searchAirlines(query, 50);
+    try {
+      const response = await this.axios.get<Airline[]>(`${this.apiUrl}/airlines`, {
+        cache: { ttl: AIRLINES_CACHE_TTL },
+      });
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (err) {
+      console.error('Error listing airlines:', err);
+      return [];
+    }
   }
 
   async getAirlineDetail(icao: string): Promise<Airline | null> {

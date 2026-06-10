@@ -27,9 +27,11 @@ impl MongoAircraftRepository {
 #[async_trait]
 impl AircraftRepository for MongoAircraftRepository {
     async fn find(&self, icao24: &Icao24) -> RepoResult<Option<Aircraft>> {
+        // Query by the indexed `icao24` field, not `_id` — this works
+        // for both legacy ObjectId-keyed documents and new documents.
         let found = self
             .col
-            .find_one(doc! { "_id": icao24.as_str() })
+            .find_one(doc! { "icao24": icao24.as_str() })
             .await
             .map_err(map_mongo_error)?;
         match found {
@@ -45,7 +47,7 @@ impl AircraftRepository for MongoAircraftRepository {
         let ids: Vec<&str> = icao24s.iter().map(Icao24::as_str).collect();
         let cursor = self
             .col
-            .find(doc! { "_id": { "$in": ids } })
+            .find(doc! { "icao24": { "$in": ids } })
             .await
             .map_err(map_mongo_error)?;
         let docs: Vec<Document> = cursor.try_collect().await.map_err(map_mongo_error)?;
@@ -56,10 +58,12 @@ impl AircraftRepository for MongoAircraftRepository {
     }
 
     async fn upsert(&self, aircraft: &Aircraft) -> RepoResult<()> {
+        // Upsert keyed by the indexed `icao24` field. The document
+        // body doesn't carry `_id`, so Mongo preserves whatever was
+        // already there (or mints a fresh ObjectId on first insert).
         let doc = aircraft_to_document(aircraft);
-        let id = aircraft.icao24.as_str();
         self.col
-            .replace_one(doc! { "_id": id }, doc)
+            .replace_one(doc! { "icao24": aircraft.icao24.as_str() }, doc)
             .with_options(ReplaceOptions::builder().upsert(true).build())
             .await
             .map_err(map_mongo_error)?;

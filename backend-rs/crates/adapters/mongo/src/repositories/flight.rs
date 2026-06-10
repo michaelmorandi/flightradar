@@ -66,18 +66,18 @@ impl MongoFlightRepository {
 
 #[async_trait]
 impl FlightRepository for MongoFlightRepository {
-    async fn upsert(&self, flight: &Flight) -> RepoResult<()> {
-        let doc = flight_to_document(flight)?;
-        let id = doc
-            .get("_id")
-            .cloned()
-            .ok_or(RepositoryError::Conflict("flight missing _id".into()))?;
+    async fn upsert(&self, flight: &Flight) -> RepoResult<FlightId> {
+        // If the domain id parses as an ObjectId, keep it (so subsequent
+        // upserts of the same flight target the same _id). Otherwise mint
+        // a fresh one — never re-key silently inside the codec.
+        let oid = ObjectId::parse_str(flight.id.as_str()).unwrap_or_else(|_| ObjectId::new());
+        let doc = flight_to_document(flight, oid)?;
         self.col
-            .replace_one(doc! { "_id": id }, doc)
+            .replace_one(doc! { "_id": oid }, doc)
             .with_options(ReplaceOptions::builder().upsert(true).build())
             .await
             .map_err(map_mongo_error)?;
-        Ok(())
+        Ok(FlightId::new(oid.to_hex()))
     }
 
     async fn find_by_id(&self, id: &FlightId) -> RepoResult<Flight> {

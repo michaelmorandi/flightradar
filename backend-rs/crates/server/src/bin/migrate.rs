@@ -1,32 +1,26 @@
 //! One-shot Mongo schema migration: legacy Python field names → clean
 //! Rust shape. Idempotent — running it twice is a no-op.
 //!
-//! What it changes (collection-by-collection):
+//! What it changes:
 //!
-//! - **flights**:
-//!     - `modeS` → `icao24`
-//!     - `is_military` left as-is (already present)
-//!     - `airline_icao` left as-is
-//!     - legacy `expire_at` timestamp dropped (Mongo TTL index handles
-//!       expiry now)
-//! - **positions**:
-//!     - `flight_id` left as-is (already ObjectId)
-//!     - `timestmp` → `observed_at`
-//!     - `alt` → `alt_ft`
-//!     - `gs` → `ground_speed_kt`
-//!     - `track` → `track_deg`
-//!     - legacy `expire_at` dropped
-//! - **aircraft**:
-//!     - `modeS` → `icao24`
-//!     - `registration`, `icaoTypeCode` → `type_code`, `type` →
-//!       `type_description`, `registeredOwners` → `operator`,
-//!       `icaoTypeDesignator` → `designator`
-//! - **aircraft_to_process**:
-//!     - `modeS` → `icao24`
-//!     - `query_attempts` → `attempts`
-//!     - `last_attempt_time` → `last_attempt_at`
-//! - **users**: collection dropped entirely (clean-slate auth — the
-//!   admin is re-seeded from `ADMIN_*` env vars on first server boot).
+//! - **flights**: `modeS` → `icao24`, legacy `expire_at` dropped (TTL
+//!   index owns expiry now).
+//! - **positions**: the Python collection used `timestmp` as its
+//!   time-series timeField. The Rust adapter uses `observed_at`, which
+//!   Mongo cannot rename in a time-series collection. The migrator
+//!   therefore **drops** the legacy positions collection so the next
+//!   schema bootstrap can recreate it with the new timeField. Live
+//!   tracks are inherently transient — they refill from the radar
+//!   source within minutes.
+//! - **aircraft**: `modeS` → `icao24`, and the document's `_id` is
+//!   replaced with the legacy ObjectId pattern only as long as the
+//!   `icao24` field exists (the new adapter looks documents up by the
+//!   indexed `icao24`, not by `_id`).
+//! - **aircraft_to_process**: `modeS` → `icao24`, `query_attempts` →
+//!   `attempts`, `last_attempt_time` → `last_attempt_at`. `_id` is set
+//!   to the icao24 string so the new adapter's upsert path lines up.
+//! - **users**: collection dropped entirely; admin re-seeded from
+//!   `ADMIN_EMAIL` + `ADMIN_PASSWORD` on next server boot.
 //!
 //! Usage:
 //!
@@ -105,29 +99,43 @@ async fn migrate_flights(db: &Database) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// positions
+// positions (drop + let bootstrap recreate)
 // ---------------------------------------------------------------------------
 
 async fn migrate_positions(db: &Database) -> Result<()> {
+    // Look for the legacy time-series collection. Two telltales:
+    //   - presence of the `timestmp` field on a sample document,
+    //   - or the collection exists at all but with a different timeField.
     let col: Collection<Document> = db.collection("positions");
-    let count = col
+    let names = db
+        .list_collection_names()
+        .await
+        .context("list collections")?;
+    let has_positions = names.iter().any(|n| n == "positions");
+    if !has_positions {
+        info!("positions: not present, nothing to migrate");
+        return Ok(());
+    }
+
+    let legacy_count = col
         .count_documents(doc! { "timestmp": { "$exists": true } })
         .await
         .unwrap_or(0);
-    if count == 0 {
-        info!("positions: nothing to migrate");
+    if legacy_count == 0 {
+        // Could still be a Rust-shape collection. Leave it alone.
+        info!("positions: no legacy `timestmp` documents — leaving in place");
         return Ok(());
     }
-    // Time-series collections in Mongo don't accept $rename across
-    // metaField/timeField via updateMany — they're write-once. The
-    // pragmatic path: log how many docs would be affected and instruct
-    // the operator to drop and re-seed from the radar source.
+
     warn!(
-        count,
-        "positions is a time-series collection; field renames are not \
-         supported in place. Drop the collection and let the FlightUpdater \
-         repopulate it from the radar source after cutover."
+        legacy_count,
+        "positions: dropping legacy time-series collection (field renames \
+         aren't supported in place; live tracks will refill from the radar \
+         source after server start)"
     );
+    col.drop()
+        .await
+        .context("drop legacy positions collection")?;
     Ok(())
 }
 
@@ -165,13 +173,13 @@ async fn migrate_aircraft(db: &Database) -> Result<()> {
     info!(
         matched = res.matched_count,
         modified = res.modified_count,
-        "aircraft migrated"
+        "aircraft renamed"
     );
 
-    // The _id key used to mirror modeS in the old Python store; if it's
-    // still the legacy random ObjectId we leave it (the Rust adapter
-    // looks up by icao24 field, not _id). New documents will use icao24
-    // as _id directly.
+    // The new adapter looks up by the indexed `icao24` field, not `_id`,
+    // so we leave the legacy `_id` (random ObjectId from Python) alone.
+    // Admin edits will use `replace_one({icao24: …})` with `upsert: true`,
+    // which preserves whatever `_id` is already there.
     Ok(())
 }
 
@@ -216,9 +224,6 @@ async fn migrate_crawler_queue(db: &Database) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 async fn drop_users(db: &Database) -> Result<()> {
-    // Clean-slate auth: the Beanie/fastapi-users shape isn't worth
-    // shimming. Drop the whole collection; the new admin will be seeded
-    // from ADMIN_EMAIL + ADMIN_PASSWORD on the next server boot.
     let names = db
         .list_collection_names()
         .await
@@ -229,6 +234,6 @@ async fn drop_users(db: &Database) -> Result<()> {
     }
     let col: Collection<Document> = db.collection("users");
     col.drop().await.context("drop users collection")?;
-    info!("users: dropped (admin will be re-seeded from ADMIN_* env on next boot)");
+    info!("users: dropped (admin re-seeded from ADMIN_* env on next boot)");
     Ok(())
 }

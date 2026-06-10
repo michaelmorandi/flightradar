@@ -7,9 +7,10 @@ use flightradar_domain::{AirlineIcao, Callsign, Flight, FlightId, Icao24};
 
 use crate::error::CodecError;
 
-pub fn flight_to_document(flight: &Flight) -> Result<Document, CodecError> {
-    let id = ObjectId::parse_str(flight.id.as_str()).unwrap_or_else(|_| ObjectId::new()); // accept domain-generated IDs by minting an ObjectId
-
+/// Encode a flight under an explicit `_id`. The caller decides the id —
+/// either parsed from the domain `FlightId` or freshly minted for new
+/// flights — so this function can never silently re-key a document.
+pub fn flight_to_document(flight: &Flight, id: ObjectId) -> Result<Document, CodecError> {
     let mut doc = doc! {
         "_id": id,
         "icao24": flight.icao24.as_str(),
@@ -132,11 +133,16 @@ mod tests {
         }
     }
 
+    fn oid_of(f: &Flight) -> ObjectId {
+        ObjectId::parse_str(f.id.as_str()).unwrap()
+    }
+
     #[test]
     fn roundtrip_flight_preserves_all_fields() {
         let original = flight();
-        let doc = flight_to_document(&original).unwrap();
+        let doc = flight_to_document(&original, oid_of(&original)).unwrap();
         let parsed = document_to_flight(&doc).unwrap();
+        assert_eq!(parsed.id, original.id);
         assert_eq!(parsed.icao24, original.icao24);
         assert_eq!(parsed.callsign, original.callsign);
         assert_eq!(parsed.airline_icao, original.airline_icao);
@@ -150,7 +156,7 @@ mod tests {
         let mut f = flight();
         f.callsign = None;
         f.airline_icao = None;
-        let doc = flight_to_document(&f).unwrap();
+        let doc = flight_to_document(&f, oid_of(&f)).unwrap();
         assert!(!doc.contains_key("callsign"));
         assert!(!doc.contains_key("airline_icao"));
         let parsed = document_to_flight(&doc).unwrap();
@@ -180,12 +186,14 @@ mod tests {
     }
 
     #[test]
-    fn non_objectid_flight_id_falls_back_to_new_oid() {
+    fn caller_supplied_oid_wins_over_flight_id() {
+        // The repository decides the _id; a stale/synthetic domain id in
+        // the struct must not leak into the document.
         let mut f = flight();
         f.id = FlightId::new("not-an-objectid");
-        let doc = flight_to_document(&f).unwrap();
-        // _id should still be a valid ObjectId
-        assert!(doc.get_object_id("_id").is_ok());
+        let oid = ObjectId::new();
+        let doc = flight_to_document(&f, oid).unwrap();
+        assert_eq!(doc.get_object_id("_id").unwrap(), oid);
     }
 
     #[test]
