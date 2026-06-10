@@ -2,10 +2,23 @@
 
 use axum::extract::{Path, State};
 use axum::Json;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use flightradar_application::{AdminStats, AircraftPatch};
 use flightradar_domain::Icao24;
+
+/// Distinguish "field missing" (`None`) from "field set to null"
+/// (`Some(None)`) in `#[derive(Deserialize)]`. Without this, serde
+/// collapses both to `None` and the admin editor has no way to clear
+/// a field.
+#[allow(clippy::option_option)] // tri-state on purpose
+fn double_option<'de, T, D>(de: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    Deserialize::deserialize(de).map(Some)
+}
 
 use crate::dto::aircraft::AircraftDto;
 use crate::error::ApiError;
@@ -44,12 +57,18 @@ pub async fn get_aircraft(
 }
 
 #[derive(Debug, Deserialize, Default)]
+#[allow(clippy::option_option)] // tri-state on purpose; see admin.rs
 pub struct AircraftPatchRequest {
-    pub registration: Option<String>,
-    pub type_code: Option<String>,
-    pub type_description: Option<String>,
-    pub operator: Option<String>,
-    pub designator: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub registration: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub type_code: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub type_description: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub operator: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub designator: Option<Option<String>>,
 }
 
 impl From<AircraftPatchRequest> for AircraftPatch {

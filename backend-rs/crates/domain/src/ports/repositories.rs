@@ -57,7 +57,12 @@ pub struct FlightFilter {
 
 #[async_trait]
 pub trait FlightRepository: Send + Sync + std::fmt::Debug {
-    async fn upsert(&self, flight: &Flight) -> RepoResult<()>;
+    /// Insert or update a flight. Returns the *canonical* id of the stored
+    /// record: implementations are free to assign their own identifier
+    /// when the supplied `flight.id` is not in their native format (e.g.
+    /// Mongo assigning an `ObjectId`). Callers MUST use the returned id
+    /// for any subsequent reference to this flight.
+    async fn upsert(&self, flight: &Flight) -> RepoResult<FlightId>;
     async fn find_by_id(&self, id: &FlightId) -> RepoResult<Flight>;
     async fn find_open_for_icao24(&self, icao24: &Icao24) -> RepoResult<Option<Flight>>;
     async fn list(&self, filter: &FlightFilter, page: PageRequest) -> RepoResult<Page<Flight>>;

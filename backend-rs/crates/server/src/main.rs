@@ -29,6 +29,7 @@ async fn main() -> Result<()> {
     let middleware_config = MiddlewareConfig {
         allowed_origins: config.allowed_origins.clone(),
         request_timeout: std::time::Duration::from_secs(30),
+        rate_limit_auth: true,
     };
     let router = build_router(app.state.clone(), &middleware_config);
 

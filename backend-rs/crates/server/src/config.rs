@@ -38,6 +38,15 @@ pub struct Config {
     // Mongo
     pub mongo_uri: String,
     pub mongo_db: String,
+    /// `None` keeps flight documents forever; `Some(0)` is rejected at
+    /// load time as nonsensical. Drives the `flights.last_contact` TTL
+    /// index.
+    pub flight_retention: Option<Duration>,
+    /// Retention for the positions time-series collection. Bound at
+    /// collection-create time and cannot be changed without dropping.
+    pub position_retention: Option<Duration>,
+    /// Crawler-log retention.
+    pub crawler_log_retention: Option<Duration>,
 
     // Radar
     pub radar_kind: RadarKind,
@@ -107,6 +116,9 @@ impl Config {
             allowed_origins: parse_origins(get("ALLOWED_ORIGINS").as_deref()),
             mongo_uri,
             mongo_db,
+            flight_retention: optional_duration_secs(get, "FLIGHT_RETENTION_SECS")?,
+            position_retention: optional_duration_secs(get, "POSITION_RETENTION_SECS")?,
+            crawler_log_retention: optional_duration_secs(get, "CRAWLER_LOG_RETENTION_SECS")?,
             radar_kind,
             radar_endpoint,
             flush_interval: duration_secs(get, "FLUSH_INTERVAL_SECS", 2)?,
@@ -131,6 +143,25 @@ fn required(get: &dyn Fn(&str) -> Option<String>, key: &str) -> Result<String, C
     get(key)
         .filter(|s| !s.trim().is_empty())
         .ok_or_else(|| ConfigError::Missing(key.into()))
+}
+
+/// Retention envs accept `0` or `none` to mean "no TTL — keep forever".
+/// Anything else parses as a positive second count.
+fn optional_duration_secs(
+    get: &dyn Fn(&str) -> Option<String>,
+    key: &str,
+) -> Result<Option<Duration>, ConfigError> {
+    let Some(raw) = get(key) else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim().to_ascii_lowercase();
+    if trimmed.is_empty() || trimmed == "0" || trimmed == "none" || trimmed == "forever" {
+        return Ok(None);
+    }
+    let parsed: u64 = trimmed
+        .parse()
+        .map_err(|_| ConfigError::InvalidValue(key.into(), raw.clone()))?;
+    Ok(Some(Duration::from_secs(parsed)))
 }
 
 fn duration_secs(

@@ -90,8 +90,13 @@ impl AircraftCrawler {
             report.source_successes += outcome.source_successes;
             report.source_failures += outcome.source_failures;
             report.skipped_by_breaker += outcome.skipped_by_breaker;
+            // Treat both "we successfully upserted" and "the aircraft
+            // was already complete" as success on the queue side, so
+            // the row is removed and we don't re-crawl it on the next
+            // tick (the bug that produced an infinite crawl loop).
+            let drop_from_queue = outcome.upserted || outcome.already_complete;
             self.queue_repo
-                .record_attempt(&entry.icao24, outcome.upserted)
+                .record_attempt(&entry.icao24, drop_from_queue)
                 .await?;
         }
 
@@ -99,8 +104,23 @@ impl AircraftCrawler {
     }
 
     async fn process(&self, icao24: &Icao24) -> Result<ProcessOutcome, ApplicationError> {
-        let mut merged = Aircraft::new(icao24.clone());
         let mut outcome = ProcessOutcome::default();
+
+        // 1. Seed `merged` from what we already know — and short-circuit
+        //    if the record is already complete-with-operator so we don't
+        //    re-hammer upstream sources for aircraft we've already
+        //    profiled.
+        let mut merged = match self.aircraft_repo.find(icao24).await? {
+            Some(existing) => {
+                if existing.is_complete_with_operator() {
+                    debug!(%icao24, "aircraft already complete — skipping crawl");
+                    outcome.already_complete = true;
+                    return Ok(outcome);
+                }
+                existing
+            }
+            None => Aircraft::new(icao24.clone()),
+        };
 
         for source in &self.sources {
             let name = source.name().to_owned();
@@ -196,6 +216,10 @@ struct ProcessOutcome {
     source_successes: usize,
     source_failures: usize,
     skipped_by_breaker: usize,
+    /// Aircraft was already complete in the repo; we didn't hit any
+    /// upstream source. Treat as success on the queue side so the row
+    /// is removed.
+    already_complete: bool,
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,7 @@
-//! Aircraft ↔ BSON. The Aircraft `_id` is the ICAO24 string — naturally
-//! unique, no synthetic key needed.
+//! Aircraft ↔ BSON. Documents are looked up by the indexed `icao24`
+//! field — we deliberately do NOT key by `_id`, so that legacy
+//! ObjectId-keyed documents from the Python era keep working alongside
+//! fresh ones without duplication.
 
 use bson::{doc, Document};
 
@@ -9,8 +11,10 @@ use super::flight::read_opt_str;
 use crate::error::CodecError;
 
 pub fn aircraft_to_document(ac: &Aircraft) -> Document {
+    // Note: no `_id` here. Mongo preserves the existing `_id` on update
+    // and mints an ObjectId on insert. This is what lets legacy docs
+    // (with ObjectId `_id`) merge cleanly with new admin edits.
     let mut doc = doc! {
-        "_id": ac.icao24.as_str(),
         "icao24": ac.icao24.as_str(),
     };
     if let Some(reg) = &ac.registration {
@@ -83,10 +87,13 @@ mod tests {
     }
 
     #[test]
-    fn id_field_is_icao24() {
+    fn document_carries_indexed_icao24_field_only() {
+        // No `_id` in the produced document — Mongo decides on insert,
+        // existing `_id` is preserved on update.
         let ac = full_aircraft();
         let doc = aircraft_to_document(&ac);
-        assert_eq!(doc.get_str("_id").unwrap(), "ABCDEF");
+        assert!(!doc.contains_key("_id"));
+        assert_eq!(doc.get_str("icao24").unwrap(), "ABCDEF");
     }
 
     #[test]

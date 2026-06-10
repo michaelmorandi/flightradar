@@ -54,8 +54,8 @@ impl StubFlightRepo {
 }
 #[async_trait]
 impl FlightRepository for StubFlightRepo {
-    async fn upsert(&self, _f: &Flight) -> RepoResult<()> {
-        Ok(())
+    async fn upsert(&self, f: &Flight) -> RepoResult<FlightId> {
+        Ok(f.id.clone())
     }
     async fn find_by_id(&self, id: &FlightId) -> RepoResult<Flight> {
         self.flights
@@ -266,7 +266,13 @@ fn harness() -> Harness {
             build_timestamp: "1970".into(),
         },
     };
-    let router = build_router(state, &MiddlewareConfig::default());
+    let router = build_router(
+        state,
+        &MiddlewareConfig {
+            rate_limit_auth: false,
+            ..MiddlewareConfig::default()
+        },
+    );
     Harness {
         router,
         cookie_key,

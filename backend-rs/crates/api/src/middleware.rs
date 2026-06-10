@@ -17,6 +17,12 @@ use tower_http::trace::TraceLayer;
 pub struct MiddlewareConfig {
     pub allowed_origins: Vec<String>,
     pub request_timeout: Duration,
+    /// Whether to attach the per-IP rate-limit layer to `/auth/*`. The
+    /// limiter relies on resolvable client IPs (typically forwarded by
+    /// nginx via `X-Real-IP`); disable it in unit/integration tests
+    /// that drive the router via `tower::ServiceExt::oneshot`, which
+    /// has no socket-level peer.
+    pub rate_limit_auth: bool,
 }
 
 impl Default for MiddlewareConfig {
@@ -24,6 +30,7 @@ impl Default for MiddlewareConfig {
         Self {
             allowed_origins: vec!["http://localhost:5173".into()],
             request_timeout: Duration::from_secs(30),
+            rate_limit_auth: true,
         }
     }
 }

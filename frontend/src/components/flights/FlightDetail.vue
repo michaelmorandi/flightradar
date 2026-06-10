@@ -98,19 +98,19 @@ const fetchRouteInfo = async (callsign: string) => {
   }
 };
 
-// Subscribe to flight history for position updates
-const setupFlightSubscription = (flightId: string) => {
-  if (currentFlightId === flightId) return;
+// Subscribe to live position updates for this aircraft. The Rust
+// backend keys its single-aircraft SSE stream by ICAO24 rather than
+// the Mongo flight ObjectId, so we pass the icao24 of the currently
+// loaded flight — not the flight id from the URL.
+const setupFlightSubscription = (icao24: string) => {
+  if (currentFlightId === icao24) return;
 
-  // Unsubscribe from previous flight
   if (currentFlightId && dataService.isSubscribedToFlight(currentFlightId)) {
     dataService.unsubscribeFromFlight(currentFlightId);
   }
 
-  currentFlightId = flightId;
-
-  // Subscribe to the new flight for history updates
-  dataService.subscribeToFlight(flightId);
+  currentFlightId = icao24;
+  dataService.subscribeToFlight(icao24);
 };
 
 // Load flight and aircraft data
@@ -165,8 +165,31 @@ const loadFlightData = async (flightId: string) => {
         }
       }
 
-      // Subscribe to flight position updates
-      setupFlightSubscription(flightId);
+      // Seed the history store with the persisted flight track so the
+      // path renders immediately, then attach the live stream for
+      // continued updates. Without this the path would start at "now"
+      // because the SSE snapshot only carries the current position.
+      if (flightData.icao24) {
+        try {
+          const positions = await apiService.getPositions(flightId);
+          if (positions.length > 0) {
+            const seeded = positions.map((p) => ({
+              lat: p.lat,
+              lon: p.lon,
+              altitude: p.alt_ft,
+              groundSpeed: p.ground_speed_kt,
+              track: p.track_deg,
+              timestamp: p.observed_at ? Date.parse(p.observed_at) : Date.now(),
+            }));
+            historyStore.setHistory(flightData.icao24, seeded);
+          }
+        } catch (err) {
+          console.warn('Could not pre-load flight history:', err);
+        }
+
+        // Subscribe by ICAO24, not by flight id — see comment above.
+        setupFlightSubscription(flightData.icao24);
+      }
     }
   } catch (error) {
     console.error('Error loading flight data:', error);

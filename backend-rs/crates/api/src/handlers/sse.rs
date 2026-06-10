@@ -45,14 +45,21 @@ fn make_sse(
     filter: Option<Icao24>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let upstream = state.events.subscribe();
+    let events = state.events.clone();
     let stream = upstream.filter_map(move |item| {
         let filter = filter.clone();
+        let events = events.clone();
         async move {
             match item {
                 Ok(event) => render(event, filter.as_ref()).map(Ok),
                 Err(err) => {
-                    warn!(error = %err, "live stream subscriber error");
-                    None
+                    // A `Lagged` subscriber would otherwise lose state
+                    // forever: it would only see future deltas, with no
+                    // baseline to apply them against. Re-snapshot from
+                    // the live state so the client can recover cleanly.
+                    warn!(error = %err, "live stream subscriber lagged — re-snapshotting");
+                    let snapshot = events.current_snapshot();
+                    render(snapshot, filter.as_ref()).map(Ok)
                 }
             }
         }

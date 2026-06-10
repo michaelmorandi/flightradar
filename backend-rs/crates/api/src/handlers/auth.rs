@@ -1,4 +1,4 @@
-//! Auth endpoints: anonymous login, admin login, logout, me.
+//! Auth endpoints: anonymous login, admin login, logout, me, refresh.
 
 use std::time::Duration;
 
@@ -6,6 +6,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
 use axum_extra::extract::cookie::{Cookie, PrivateCookieJar, SameSite};
+use flightradar_domain::ports::auth::TokenClaims;
 
 use crate::dto::auth::{LoginRequest, LoginResponse, UserDto};
 use crate::error::ApiError;
@@ -21,6 +22,18 @@ fn build_cookie<'a>(token: String, ttl: Duration) -> Cookie<'a> {
         .same_site(SameSite::Lax)
         .secure(true)
         .max_age(time::Duration::seconds(secs))
+        .build()
+}
+
+fn build_removal_cookie<'a>() -> Cookie<'a> {
+    // Without `path("/")` the removal cookie defaults to the request
+    // path and won't actually clear the session cookie set at "/".
+    Cookie::build((AUTH_COOKIE, ""))
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Lax)
+        .secure(true)
+        .max_age(time::Duration::seconds(0))
         .build()
 }
 
@@ -64,18 +77,48 @@ pub async fn login(
 }
 
 pub async fn logout(jar: PrivateCookieJar) -> (PrivateCookieJar, StatusCode) {
-    let jar = jar.remove(Cookie::from(AUTH_COOKIE));
+    // The default `jar.remove(Cookie::from(name))` doesn't carry the
+    // path; without `path("/")` browsers won't actually clear the
+    // session cookie. Emit an explicit zero-age cookie at the correct
+    // path so logout reliably terminates the session.
+    let jar = jar.add(build_removal_cookie());
     (jar, StatusCode::NO_CONTENT)
 }
 
-pub async fn me(Authenticated(claims): Authenticated) -> Json<UserDto> {
-    Json(UserDto {
-        id: claims.user_id.as_str().to_owned(),
-        email: String::new(), // not in JWT claims; client should re-fetch if needed
-        role: crate::dto::auth::role_str(claims.role).to_owned(),
-        display_name: None,
-        is_admin: claims.role == flightradar_domain::Role::Admin,
-    })
+pub async fn me(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Authenticated(claims): Authenticated,
+) -> Result<(PrivateCookieJar, Json<UserDto>), ApiError> {
+    // Sliding refresh: every authenticated call to /auth/me re-issues
+    // the session cookie with a fresh TTL. This is the mechanism the
+    // admin frontend leans on to keep its session alive past the JWT's
+    // 15-minute hard expiry without holding the password in memory.
+    let jar = refresh_session(&state, jar, &claims).await?;
+    Ok((
+        jar,
+        Json(UserDto {
+            id: claims.user_id.as_str().to_owned(),
+            email: String::new(), // not in JWT claims; client should re-fetch if needed
+            role: crate::dto::auth::role_str(claims.role).to_owned(),
+            display_name: None,
+            is_admin: claims.role == flightradar_domain::Role::Admin,
+        }),
+    ))
+}
+
+async fn refresh_session(
+    state: &AppState,
+    jar: PrivateCookieJar,
+    claims: &TokenClaims,
+) -> Result<PrivateCookieJar, ApiError> {
+    let outcome = state
+        .auth
+        .service
+        .issue_refresh(claims.user_id.clone(), claims.role)
+        .await?;
+    let ttl = ttl_until(outcome.expires_at);
+    Ok(jar.add(build_cookie(outcome.token, ttl)))
 }
 
 fn ttl_until(expires_at: time::OffsetDateTime) -> Duration {

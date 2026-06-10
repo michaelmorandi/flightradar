@@ -44,6 +44,7 @@ async fn fresh_db() -> Option<MongoConnection> {
         conn.database(),
         SchemaConfig {
             flight_retention: None,
+            position_retention: None,
             crawler_log_retention: None,
         },
     )

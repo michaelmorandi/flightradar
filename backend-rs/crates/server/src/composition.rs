@@ -110,6 +110,7 @@ pub async fn build_app(config: &Config, deps: Dependencies) -> Result<ComposedAp
         deps.radar.clone(),
         deps.flight_repo.clone(),
         deps.position_repo.clone(),
+        deps.aircraft_repo.clone(),
         deps.crawler_queue.clone(),
         event_bus.clone(),
         live.clone(),
@@ -183,9 +184,16 @@ pub async fn build_production_deps(config: &Config) -> Result<Dependencies> {
     let mongo = MongoConnection::connect(&mongo_cfg)
         .await
         .context("connect to mongo")?;
-    ensure_schema(mongo.database(), SchemaConfig::default())
-        .await
-        .context("ensure mongo schema")?;
+    ensure_schema(
+        mongo.database(),
+        SchemaConfig {
+            flight_retention: config.flight_retention,
+            position_retention: config.position_retention,
+            crawler_log_retention: config.crawler_log_retention,
+        },
+    )
+    .await
+    .context("ensure mongo schema")?;
 
     let flight_repo: Arc<dyn FlightRepository> =
         Arc::new(MongoFlightRepository::new(mongo.database()));

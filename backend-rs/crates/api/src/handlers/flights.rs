@@ -6,6 +6,7 @@ use serde::Deserialize;
 
 use flightradar_domain::ports::repositories::FlightFilter;
 use flightradar_domain::{AirlineIcao, FlightId, Icao24};
+use time::Duration;
 
 use crate::dto::common::{PageInfo, PagedResponse};
 use crate::dto::flight::{FlightDto, PositionDto};
@@ -13,12 +14,22 @@ use crate::error::ApiError;
 use crate::extractors::{Authenticated, Pagination};
 use crate::state::AppState;
 
+/// Live-cutoff: flights with `last_contact` newer than this are
+/// considered "still in the air" and excluded when `exclude_live=true`.
+/// Matches the legacy Python backend's 5-minute window.
+const LIVE_CUTOFF: Duration = Duration::minutes(5);
+
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
     pub icao24: Option<String>,
     pub airline: Option<String>,
     #[serde(default)]
     pub military_only: bool,
+    /// When `true`, drop flights whose last contact is within
+    /// `LIVE_CUTOFF` of now. Lets the flight log show "completed"
+    /// flights only.
+    #[serde(default)]
+    pub exclude_live: bool,
     pub q: Option<String>,
 }
 
@@ -66,11 +77,16 @@ fn build_filter(q: &ListQuery) -> Result<FlightFilter, ApiError> {
         .map(AirlineIcao::new)
         .transpose()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let exclude_live_since = if q.exclude_live {
+        Some(time::OffsetDateTime::now_utc() - LIVE_CUTOFF)
+    } else {
+        None
+    };
     Ok(FlightFilter {
         icao24,
         airline,
         military_only: q.military_only,
-        exclude_live_since: None,
+        exclude_live_since,
         free_text: q.q.clone(),
     })
 }
@@ -85,6 +101,7 @@ mod tests {
             icao24: Some("ABCDEF".into()),
             airline: Some("AFR".into()),
             military_only: true,
+            exclude_live: false,
             q: Some("search".into()),
         };
         let f = build_filter(&q).unwrap();
@@ -100,6 +117,7 @@ mod tests {
             icao24: Some("ZZZ".into()),
             airline: None,
             military_only: false,
+            exclude_live: false,
             q: None,
         };
         assert!(matches!(
@@ -114,6 +132,7 @@ mod tests {
             icao24: None,
             airline: Some("A".into()),
             military_only: false,
+            exclude_live: false,
             q: None,
         };
         assert!(matches!(
@@ -123,11 +142,46 @@ mod tests {
     }
 
     #[test]
+    fn build_filter_propagates_exclude_live_flag() {
+        let q = ListQuery {
+            icao24: None,
+            airline: None,
+            military_only: false,
+            exclude_live: true,
+            q: None,
+        };
+        let f = build_filter(&q).unwrap();
+        let cutoff = f
+            .exclude_live_since
+            .expect("exclude_live should set the cutoff");
+        let diff = time::OffsetDateTime::now_utc() - cutoff;
+        // Cutoff lives roughly LIVE_CUTOFF in the past.
+        assert!(
+            diff >= LIVE_CUTOFF - time::Duration::seconds(2)
+                && diff <= LIVE_CUTOFF + time::Duration::seconds(2),
+            "unexpected cutoff drift: {diff:?}"
+        );
+    }
+
+    #[test]
+    fn build_filter_exclude_live_default_off() {
+        let q = ListQuery {
+            icao24: None,
+            airline: None,
+            military_only: false,
+            exclude_live: false,
+            q: None,
+        };
+        assert!(build_filter(&q).unwrap().exclude_live_since.is_none());
+    }
+
+    #[test]
     fn build_filter_defaults_are_empty() {
         let q = ListQuery {
             icao24: None,
             airline: None,
             military_only: false,
+            exclude_live: false,
             q: None,
         };
         let f = build_filter(&q).unwrap();

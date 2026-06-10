@@ -44,12 +44,12 @@ use flightradar_server::{build_app, Config};
 struct FlightStub(StdMutex<HashMap<String, Flight>>);
 #[async_trait]
 impl FlightRepository for FlightStub {
-    async fn upsert(&self, f: &Flight) -> RepoResult<()> {
+    async fn upsert(&self, f: &Flight) -> RepoResult<FlightId> {
         self.0
             .lock()
             .unwrap()
             .insert(f.id.as_str().to_owned(), f.clone());
-        Ok(())
+        Ok(f.id.clone())
     }
     async fn find_by_id(&self, id: &FlightId) -> RepoResult<Flight> {
         self.0
@@ -186,6 +186,9 @@ fn test_config() -> Config {
         allowed_origins: vec!["http://localhost".into()],
         mongo_uri: "unused".into(),
         mongo_db: "unused".into(),
+        flight_retention: None,
+        position_retention: None,
+        crawler_log_retention: None,
         radar_kind: flightradar_server::config::RadarKind::Dump1090,
         radar_endpoint: "unused".into(),
         flush_interval: Duration::from_secs(2),
@@ -254,7 +257,13 @@ async fn body_json(resp: axum::response::Response) -> Value {
 #[tokio::test]
 async fn full_app_serves_info_endpoint() {
     let app = build_app(&test_config(), deps()).await.unwrap();
-    let router = build_router(app.state, &MiddlewareConfig::default());
+    let router = build_router(
+        app.state,
+        &MiddlewareConfig {
+            rate_limit_auth: false,
+            ..MiddlewareConfig::default()
+        },
+    );
 
     let resp = router
         .oneshot(
@@ -273,7 +282,13 @@ async fn full_app_serves_info_endpoint() {
 #[tokio::test]
 async fn full_app_anonymous_login_then_list_flights() {
     let app = build_app(&test_config(), deps()).await.unwrap();
-    let router = build_router(app.state, &MiddlewareConfig::default());
+    let router = build_router(
+        app.state,
+        &MiddlewareConfig {
+            rate_limit_auth: false,
+            ..MiddlewareConfig::default()
+        },
+    );
 
     // POST /auth/anonymous → cookie
     let resp = router
@@ -319,7 +334,13 @@ async fn full_app_anonymous_login_then_list_flights() {
 #[tokio::test]
 async fn full_app_health_endpoints_are_open() {
     let app = build_app(&test_config(), deps()).await.unwrap();
-    let router = build_router(app.state, &MiddlewareConfig::default());
+    let router = build_router(
+        app.state,
+        &MiddlewareConfig {
+            rate_limit_auth: false,
+            ..MiddlewareConfig::default()
+        },
+    );
 
     for path in ["/api/v1/health/alive", "/api/v1/health/ready"] {
         let resp = router
@@ -334,7 +355,13 @@ async fn full_app_health_endpoints_are_open() {
 #[tokio::test]
 async fn full_app_airline_lookup_returns_seeded_airline() {
     let app = build_app(&test_config(), deps()).await.unwrap();
-    let router = build_router(app.state, &MiddlewareConfig::default());
+    let router = build_router(
+        app.state,
+        &MiddlewareConfig {
+            rate_limit_auth: false,
+            ..MiddlewareConfig::default()
+        },
+    );
 
     // Anonymous login.
     let resp = router

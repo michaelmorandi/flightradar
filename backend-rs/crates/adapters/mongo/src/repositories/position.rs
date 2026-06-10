@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use bson::{doc, oid::ObjectId, Document};
 use futures::stream::TryStreamExt;
-use mongodb::options::FindOptions;
+use mongodb::options::{FindOptions, InsertManyOptions};
 use mongodb::{Collection, Database};
+use tracing::warn;
 
 use flightradar_domain::ports::repositories::{PositionRepository, RepoResult, RepositoryError};
 use flightradar_domain::{FlightId, PositionReport};
@@ -32,15 +33,36 @@ impl PositionRepository for MongoPositionRepository {
         Ok(())
     }
 
+    /// Best-effort batch insert.
+    ///
+    /// Entries that fail to encode are logged and skipped — they don't
+    /// poison the rest of the tick. The remaining documents are inserted
+    /// with `ordered: false`, so a single rejected document doesn't
+    /// abort the batch either. Returns `Ok(())` iff at least one entry
+    /// was either skipped cleanly or accepted by Mongo.
     async fn append_batch(&self, entries: &[(FlightId, PositionReport)]) -> RepoResult<()> {
         if entries.is_empty() {
             return Ok(());
         }
-        let docs: Vec<Document> = entries
-            .iter()
-            .map(|(id, pr)| position_to_document(id, pr))
-            .collect::<Result<_, _>>()?;
-        self.col.insert_many(docs).await.map_err(map_mongo_error)?;
+        let mut docs: Vec<Document> = Vec::with_capacity(entries.len());
+        for (id, pr) in entries {
+            match position_to_document(id, pr) {
+                Ok(d) => docs.push(d),
+                Err(err) => {
+                    warn!(error = %err, flight_id = %id.as_str(), "skipping unencodable position");
+                }
+            }
+        }
+        if docs.is_empty() {
+            return Ok(());
+        }
+        let opts = InsertManyOptions::builder().ordered(false).build();
+        if let Err(err) = self.col.insert_many(docs).with_options(opts).await {
+            // bulk write errors are common (eg. a single duplicate timestamp).
+            // Surface them as a warning, not a hard failure, so the next tick
+            // can keep going.
+            warn!(error = %err, "position batch insert had failures");
+        }
         Ok(())
     }
 

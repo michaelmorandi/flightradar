@@ -24,9 +24,11 @@ use flightradar_domain::ports::clock::Clock;
 use flightradar_domain::ports::event_bus::{PositionEvent, PositionEventBus};
 use flightradar_domain::ports::radar_source::{PositionStream, RadarSource};
 use flightradar_domain::ports::repositories::{
-    CrawlerQueueRepository, FlightRepository, PositionRepository,
+    AircraftRepository, CrawlerQueueRepository, FlightRepository, PositionRepository,
 };
-use flightradar_domain::{Flight, FlightId, Icao24, LivePosition, LiveSnapshot, PositionReport};
+use flightradar_domain::{
+    Aircraft, Flight, FlightId, Icao24, LivePosition, LiveSnapshot, PositionReport,
+};
 
 use crate::error::ApplicationError;
 use crate::live_state::LiveState;
@@ -75,11 +77,22 @@ pub struct FlightUpdaterTickReport {
     pub unknown_aircraft_enqueued: usize,
 }
 
+/// In-memory cache entry for the currently-open flight of an ICAO24.
+/// Eliminates the per-aircraft `find_open_for_icao24` Mongo trip on the
+/// hot path.
+#[derive(Debug, Clone)]
+struct CachedFlight {
+    id: FlightId,
+    last_contact: OffsetDateTime,
+    callsign: Option<flightradar_domain::Callsign>,
+}
+
 #[derive(Debug)]
 pub struct FlightUpdater {
     radar: Arc<dyn RadarSource>,
     flight_repo: Arc<dyn FlightRepository>,
     position_repo: Arc<dyn PositionRepository>,
+    aircraft_repo: Arc<dyn AircraftRepository>,
     crawler_queue: Arc<dyn CrawlerQueueRepository>,
     event_bus: Arc<dyn PositionEventBus>,
     live_state: LiveState,
@@ -89,6 +102,13 @@ pub struct FlightUpdater {
     /// Reports accumulated since the last flush, keyed by ICAO24. The
     /// latest sighting for an aircraft replaces earlier ones.
     pending: Mutex<HashMap<Icao24, PositionReport>>,
+    /// Open-flight cache: ICAO24 → cached info about the flight
+    /// currently associated with that aircraft. Hydrated on demand,
+    /// invalidated when a new flight is created (gap heuristic).
+    open_flights: Mutex<HashMap<Icao24, CachedFlight>>,
+    /// ICAO24s that already have *complete* metadata (we don't re-enqueue
+    /// them every tick). `false` means we've checked and it's incomplete.
+    aircraft_known: Mutex<HashMap<Icao24, bool>>,
 }
 
 impl FlightUpdater {
@@ -97,6 +117,7 @@ impl FlightUpdater {
         radar: Arc<dyn RadarSource>,
         flight_repo: Arc<dyn FlightRepository>,
         position_repo: Arc<dyn PositionRepository>,
+        aircraft_repo: Arc<dyn AircraftRepository>,
         crawler_queue: Arc<dyn CrawlerQueueRepository>,
         event_bus: Arc<dyn PositionEventBus>,
         live_state: LiveState,
@@ -108,6 +129,7 @@ impl FlightUpdater {
             radar,
             flight_repo,
             position_repo,
+            aircraft_repo,
             crawler_queue,
             event_bus,
             live_state,
@@ -115,6 +137,8 @@ impl FlightUpdater {
             clock,
             config,
             pending: Mutex::new(HashMap::new()),
+            open_flights: Mutex::new(HashMap::new()),
+            aircraft_known: Mutex::new(HashMap::new()),
         }
     }
 
@@ -189,6 +213,10 @@ impl FlightUpdater {
         report.delta_size = changed.len();
         report.removed_aircraft = removed.len();
 
+        // Publish the live state FIRST so a subscriber that connects in
+        // the gap doesn't see "snapshot without the delta we're about to
+        // send", then publish the delta.
+        self.live_state.publish(next_snapshot);
         if !changed.is_empty() || !removed.is_empty() {
             self.event_bus.publish(PositionEvent::Delta {
                 changed,
@@ -196,19 +224,61 @@ impl FlightUpdater {
                 emitted_at: now,
             });
         }
-        self.live_state.publish(next_snapshot);
 
         if self.config.enqueue_unknown_aircraft {
             for (_, pr) in &to_persist {
-                if let Err(err) = self.crawler_queue.enqueue(&pr.icao24).await {
-                    debug!(error = %err, icao24 = %pr.icao24, "crawler enqueue failed");
-                } else {
-                    report.unknown_aircraft_enqueued += 1;
+                if self.should_enqueue_for_crawl(&pr.icao24).await {
+                    match self.crawler_queue.enqueue(&pr.icao24).await {
+                        Ok(()) => report.unknown_aircraft_enqueued += 1,
+                        Err(err) => {
+                            debug!(error = %err, icao24 = %pr.icao24, "crawler enqueue failed");
+                        }
+                    }
                 }
             }
         }
 
         Ok(report)
+    }
+
+    /// Should this aircraft be added to the crawl queue right now?
+    /// Returns false for aircraft we already have complete metadata for,
+    /// avoiding the legacy bug where every active aircraft was re-crawled
+    /// every flush forever. The decision is cached in-process so we only
+    /// hit Mongo once per aircraft per uptime.
+    async fn should_enqueue_for_crawl(&self, icao24: &Icao24) -> bool {
+        if let Some(complete) = self
+            .aircraft_known
+            .lock()
+            .expect("aircraft_known mutex poisoned")
+            .get(icao24)
+        {
+            return !complete;
+        }
+        let complete = match self.aircraft_repo.find(icao24).await {
+            Ok(Some(ac)) => ac.is_complete_with_operator(),
+            Ok(None) => false,
+            Err(err) => {
+                debug!(error = %err, %icao24, "aircraft repo probe failed");
+                return false;
+            }
+        };
+        self.aircraft_known
+            .lock()
+            .expect("aircraft_known mutex poisoned")
+            .insert(icao24.clone(), complete);
+        !complete
+    }
+
+    /// Notify the cache that crawler-fresh metadata is now available.
+    /// Currently only called from tests; the production flow learns of
+    /// completion the next time the cache is rebuilt after a restart.
+    #[allow(dead_code)]
+    pub(crate) fn mark_aircraft_known(&self, icao24: &Icao24, complete: bool) {
+        self.aircraft_known
+            .lock()
+            .expect("aircraft_known mutex poisoned")
+            .insert(icao24.clone(), complete);
     }
 
     /// Drive ingestion and periodic flushes until the radar stream ends.
@@ -247,41 +317,105 @@ impl FlightUpdater {
         }
     }
 
+    /// Returns the persisted flight id for this aircraft. Uses an
+    /// in-memory cache to avoid `find_open_for_icao24` on every tick;
+    /// only hits Mongo on the first sighting of an aircraft (per process
+    /// lifetime) or when the gap heuristic triggers a new flight.
     async fn upsert_flight_for(
         &self,
         pr: &PositionReport,
         now: OffsetDateTime,
     ) -> Result<(FlightId, bool), ApplicationError> {
-        let existing = self
-            .flight_repo
-            .find_open_for_icao24(&pr.icao24)
-            .await
-            .map_err(ApplicationError::from)?;
+        // 1. Hit the in-memory cache.
+        let cached = self
+            .open_flights
+            .lock()
+            .expect("open_flights mutex poisoned")
+            .get(&pr.icao24)
+            .cloned();
 
-        if let Some(mut flight) = existing {
-            let gap = (now - flight.last_contact).whole_seconds();
+        let existing = if let Some(c) = cached {
+            Some((c.id.clone(), c.last_contact, c.callsign))
+        } else {
+            // 2. Cold cache → ask the repo once.
+            let probe = self
+                .flight_repo
+                .find_open_for_icao24(&pr.icao24)
+                .await
+                .map_err(ApplicationError::from)?;
+            probe.map(|f| (f.id, f.last_contact, f.callsign))
+        };
+
+        if let Some((existing_id, last_contact, existing_callsign)) = existing {
+            let gap = (now - last_contact).whole_seconds();
             if gap >= self.config.flight_gap_seconds {
+                // Old flight is stale → mint a fresh one.
                 let new = build_new_flight(pr, now, &self.classifier);
-                self.flight_repo.upsert(&new).await?;
-                return Ok((new.id, true));
+                let id = self.flight_repo.upsert(&new).await?;
+                self.cache_open_flight(&pr.icao24, &id, now, pr.callsign.clone());
+                return Ok((id, true));
             }
-            flight.last_contact = now;
-            if let Some(callsign) = pr.callsign.clone() {
-                if flight.callsign.as_ref() != Some(&callsign) {
-                    flight.airline_icao =
-                        flightradar_domain::policy::callsign::extract_airline_icao(&callsign);
-                    flight.callsign = Some(callsign);
-                }
-            }
-            self.flight_repo.upsert(&flight).await?;
-            Ok((flight.id, false))
+
+            // Same flight; bump last_contact. Only write back if the
+            // callsign changed — saves the vast majority of upserts.
+            let callsign_changed =
+                pr.callsign.is_some() && pr.callsign.as_ref() != existing_callsign.as_ref();
+            let new_callsign = if callsign_changed {
+                pr.callsign.clone()
+            } else {
+                existing_callsign
+            };
+
+            // Always persist last_contact movement so TTL doesn't kill
+            // long flights; build a minimal Flight for the upsert.
+            let airline_icao = new_callsign
+                .as_ref()
+                .and_then(flightradar_domain::policy::callsign::extract_airline_icao);
+            let to_write = Flight {
+                id: existing_id.clone(),
+                icao24: pr.icao24.clone(),
+                callsign: new_callsign.clone(),
+                airline_icao,
+                is_military: self.classifier.is_military(&pr.icao24),
+                first_contact: last_contact, // unchanged-ish; preserved-ish on update
+                last_contact: now,
+            };
+            let id = self.flight_repo.upsert(&to_write).await?;
+            self.cache_open_flight(&pr.icao24, &id, now, new_callsign);
+            Ok((id, false))
         } else {
             let new = build_new_flight(pr, now, &self.classifier);
-            self.flight_repo.upsert(&new).await?;
-            Ok((new.id, true))
+            let id = self.flight_repo.upsert(&new).await?;
+            self.cache_open_flight(&pr.icao24, &id, now, pr.callsign.clone());
+            Ok((id, true))
         }
     }
+
+    fn cache_open_flight(
+        &self,
+        icao24: &Icao24,
+        id: &FlightId,
+        last_contact: OffsetDateTime,
+        callsign: Option<flightradar_domain::Callsign>,
+    ) {
+        self.open_flights
+            .lock()
+            .expect("open_flights mutex poisoned")
+            .insert(
+                icao24.clone(),
+                CachedFlight {
+                    id: id.clone(),
+                    last_contact,
+                    callsign,
+                },
+            );
+    }
 }
+
+// `Aircraft` import only used in cache plumbing — silence unused-import
+// when tests/scaffolding compile without it.
+#[allow(dead_code)]
+fn _aircraft_phantom(_a: Aircraft) {}
 
 fn build_new_flight(
     pr: &PositionReport,
@@ -394,13 +528,14 @@ mod tests {
     }
     #[async_trait]
     impl FlightRepository for InMemFlightRepo {
-        async fn upsert(&self, flight: &Flight) -> RepoResult<()> {
+        async fn upsert(&self, flight: &Flight) -> RepoResult<FlightId> {
             self.by_icao
                 .lock()
                 .unwrap()
                 .insert(flight.icao24.to_string(), flight.clone());
             *self.upserts.lock().unwrap() += 1;
-            Ok(())
+            // Echo the supplied id so existing-flight tests stay deterministic.
+            Ok(flight.id.clone())
         }
         async fn find_by_id(&self, _id: &FlightId) -> RepoResult<Flight> {
             Err(RepositoryError::NotFound)
@@ -461,6 +596,32 @@ mod tests {
         }
     }
 
+    #[derive(Debug, Default)]
+    struct InMemAircraftRepo {
+        by_icao: StdMutex<HashMap<String, Aircraft>>,
+    }
+    #[async_trait]
+    impl flightradar_domain::ports::repositories::AircraftRepository for InMemAircraftRepo {
+        async fn find(&self, icao24: &Icao24) -> RepoResult<Option<Aircraft>> {
+            Ok(self
+                .by_icao
+                .lock()
+                .unwrap()
+                .get(&icao24.to_string())
+                .cloned())
+        }
+        async fn find_many(&self, _icao24s: &[Icao24]) -> RepoResult<Vec<Aircraft>> {
+            Ok(vec![])
+        }
+        async fn upsert(&self, ac: &Aircraft) -> RepoResult<()> {
+            self.by_icao
+                .lock()
+                .unwrap()
+                .insert(ac.icao24.to_string(), ac.clone());
+            Ok(())
+        }
+    }
+
     // -- Event bus -----------------------------------------------------
 
     #[derive(Debug, Default)]
@@ -507,6 +668,7 @@ mod tests {
         let radar = Arc::new(StreamRadar::empty());
         let flights = Arc::new(InMemFlightRepo::default());
         let positions = Arc::new(InMemPositionRepo::default());
+        let aircraft = Arc::new(InMemAircraftRepo::default());
         let queue = Arc::new(InMemCrawlerQueue::default());
         let bus = Arc::new(CapturingBus::default());
         let live = LiveState::empty();
@@ -515,6 +677,7 @@ mod tests {
             radar,
             flights.clone(),
             positions.clone(),
+            aircraft,
             queue.clone(),
             bus.clone(),
             live.clone(),

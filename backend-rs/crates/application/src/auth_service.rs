@@ -65,13 +65,17 @@ impl AuthService {
 
     /// Issue a token for the anonymous user, creating the user record
     /// lazily if it does not exist yet.
+    ///
+    /// The anonymous user has a deterministic id so concurrent first-time
+    /// anon-logins don't race to create two rows with the same email
+    /// (which would collide on the unique-email index).
     pub async fn anonymous_login(&self) -> Result<LoginOutcome, ApplicationError> {
         let email = self.config.anonymous_email;
         let user = if let Some(u) = self.users.find_by_email(email).await? {
             u
         } else {
             let new = User {
-                id: UserId::new(format!("anon-{}", self.clock.now().unix_timestamp())),
+                id: UserId::new("anonymous"),
                 email: email.into(),
                 role: Role::Anonymous,
                 display_name: Some("Anonymous".into()),
@@ -79,6 +83,7 @@ impl AuthService {
                 created_at: self.clock.now(),
                 last_login: None,
             };
+            // Upsert is keyed by user id; concurrent callers converge.
             self.users.upsert(&new, None).await?;
             new
         };
@@ -86,6 +91,29 @@ impl AuthService {
         self.touch_login(&user.id).await;
         let outcome = self.issue_token(user)?;
         Ok(outcome)
+    }
+
+    /// Re-issue a session token for an already-authenticated identity.
+    /// Powers sliding refresh from `/auth/me` — we don't need the
+    /// password to keep the session alive past the JWT's hard expiry.
+    pub async fn issue_refresh(
+        &self,
+        user_id: UserId,
+        role: Role,
+    ) -> Result<LoginOutcome, ApplicationError> {
+        // We don't reload the user record on refresh — only the id and
+        // role are needed and they're already in the verified claims.
+        let user = User {
+            id: user_id.clone(),
+            email: String::new(),
+            role,
+            display_name: None,
+            is_active: true,
+            created_at: self.clock.now(),
+            last_login: None,
+        };
+        self.touch_login(&user_id).await;
+        self.issue_token(user)
     }
 
     /// Verify email+password and issue a token. Returns `Unauthenticated`

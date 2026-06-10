@@ -19,18 +19,45 @@ pub struct AdminStats {
     pub flight_count: u64,
 }
 
+/// Tri-state patch for an aircraft record:
+/// - `None` → leave the field alone
+/// - `Some(None)` → clear the field (admin explicitly removed the value)
+/// - `Some(Some("x"))` → set the field to the given value
+///
+/// On the wire this maps to:
+/// - field absent → leave alone
+/// - field: null → clear
+/// - field: "" → clear (after trimming)
+/// - field: "x" → set
+///
+/// The old `Option<String>` couldn't distinguish "leave" from "clear",
+/// so the admin editor had no way to remove an obsolete value.
 #[derive(Debug, Clone, Default)]
+#[allow(clippy::option_option)] // tri-state on purpose; see doc above
 pub struct AircraftPatch {
-    pub registration: Option<String>,
-    pub type_code: Option<String>,
-    pub type_description: Option<String>,
-    pub operator: Option<String>,
-    pub designator: Option<String>,
+    pub registration: Option<Option<String>>,
+    pub type_code: Option<Option<String>>,
+    pub type_description: Option<Option<String>>,
+    pub operator: Option<Option<String>>,
+    pub designator: Option<Option<String>>,
 }
 
 impl AircraftPatch {
-    fn normalise(value: Option<String>) -> Option<String> {
-        value.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty())
+    /// Trim & collapse whitespace-only `Some(Some(_))` values to
+    /// `Some(None)` (an explicit clear). `None` and pre-cleared
+    /// `Some(None)` are preserved.
+    #[allow(clippy::option_option)] // tri-state, intentional
+    fn normalise(value: Option<Option<String>>) -> Option<Option<String>> {
+        value.map(|inner| {
+            inner.and_then(|s| {
+                let trimmed = s.trim().to_owned();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            })
+        })
     }
 
     #[must_use]
@@ -42,6 +69,14 @@ impl AircraftPatch {
             operator: Self::normalise(self.operator),
             designator: Self::normalise(self.designator),
         }
+    }
+}
+
+/// Apply a tri-state patch field to the matching aircraft field.
+#[allow(clippy::option_option)] // tri-state, intentional
+fn apply_patch_field(dst: &mut Option<String>, patch: Option<Option<String>>) {
+    if let Some(value) = patch {
+        *dst = value;
     }
 }
 
@@ -89,21 +124,11 @@ impl AdminService {
             .await?
             .unwrap_or_else(|| Aircraft::new(icao24.clone()));
 
-        if let Some(v) = patch.registration {
-            current.registration = Some(v);
-        }
-        if let Some(v) = patch.type_code {
-            current.type_code = Some(v);
-        }
-        if let Some(v) = patch.type_description {
-            current.type_description = Some(v);
-        }
-        if let Some(v) = patch.operator {
-            current.operator = Some(v);
-        }
-        if let Some(v) = patch.designator {
-            current.designator = Some(v);
-        }
+        apply_patch_field(&mut current.registration, patch.registration);
+        apply_patch_field(&mut current.type_code, patch.type_code);
+        apply_patch_field(&mut current.type_description, patch.type_description);
+        apply_patch_field(&mut current.operator, patch.operator);
+        apply_patch_field(&mut current.designator, patch.designator);
         // Mark the source so it's clear edits came from the dashboard.
         current.source = Some(flightradar_domain::AircraftSource::new("admin"));
 
@@ -130,8 +155,8 @@ mod tests {
     }
     #[async_trait]
     impl FlightRepository for CountingFlightRepo {
-        async fn upsert(&self, _f: &Flight) -> RepoResult<()> {
-            Ok(())
+        async fn upsert(&self, f: &Flight) -> RepoResult<FlightId> {
+            Ok(f.id.clone())
         }
         async fn find_by_id(&self, _id: &FlightId) -> RepoResult<Flight> {
             Err(RepositoryError::NotFound)
@@ -188,8 +213,8 @@ mod tests {
         let svc = AdminService::new(Arc::new(CountingFlightRepo::default()), ac_repo.clone());
 
         let patch = AircraftPatch {
-            registration: Some("HB-JCS".into()),
-            type_code: Some("A320".into()),
+            registration: Some(Some("HB-JCS".into())),
+            type_code: Some(Some("A320".into())),
             ..Default::default()
         };
         let res = svc.update_aircraft(&icao(), patch).await.unwrap();
@@ -212,8 +237,8 @@ mod tests {
 
         let svc = AdminService::new(Arc::new(CountingFlightRepo::default()), ac_repo.clone());
         let patch = AircraftPatch {
-            registration: Some("NEW-REG".into()),
-            operator: Some("Swiss".into()),
+            registration: Some(Some("NEW-REG".into())),
+            operator: Some(Some("Swiss".into())),
             ..Default::default()
         };
         let res = svc.update_aircraft(&icao(), patch).await.unwrap();
@@ -225,7 +250,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn empty_strings_in_patch_are_treated_as_absent() {
+    async fn whitespace_set_value_is_treated_as_clear() {
+        // Old behaviour: whitespace-only meant "leave alone" so the
+        // admin couldn't clear a field. New behaviour: whitespace
+        // collapses to an explicit clear, distinguishable from the
+        // "field absent" leave-alone case.
         let ac_repo = Arc::new(InMemAircraft::default());
         let mut existing = Aircraft::new(icao());
         existing.registration = Some("OLD".into());
@@ -233,13 +262,47 @@ mod tests {
 
         let svc = AdminService::new(Arc::new(CountingFlightRepo::default()), ac_repo);
         let patch = AircraftPatch {
-            registration: Some("   ".into()),
-            type_code: Some(String::new()),
+            registration: Some(Some("   ".into())),
+            type_code: Some(Some(String::new())),
             ..Default::default()
         };
         let res = svc.update_aircraft(&icao(), patch).await.unwrap();
-        // Whitespace + empty strings get normalised to None → no overwrite.
-        assert_eq!(res.registration.as_deref(), Some("OLD"));
+        assert!(res.registration.is_none(), "whitespace must clear field");
         assert!(res.type_code.is_none());
+    }
+
+    #[tokio::test]
+    async fn explicit_null_clears_field() {
+        let ac_repo = Arc::new(InMemAircraft::default());
+        let mut existing = Aircraft::new(icao());
+        existing.registration = Some("OLD".into());
+        existing.type_code = Some("A320".into());
+        ac_repo.0.lock().unwrap().insert("ABCDEF".into(), existing);
+
+        let svc = AdminService::new(Arc::new(CountingFlightRepo::default()), ac_repo);
+        let patch = AircraftPatch {
+            registration: Some(None),
+            // `type_code: None` (default) — leave alone.
+            ..Default::default()
+        };
+        let res = svc.update_aircraft(&icao(), patch).await.unwrap();
+        assert!(res.registration.is_none(), "explicit null clears");
+        assert_eq!(res.type_code.as_deref(), Some("A320"));
+    }
+
+    #[tokio::test]
+    async fn absent_field_leaves_existing_alone() {
+        let ac_repo = Arc::new(InMemAircraft::default());
+        let mut existing = Aircraft::new(icao());
+        existing.registration = Some("KEEP".into());
+        ac_repo.0.lock().unwrap().insert("ABCDEF".into(), existing);
+
+        let svc = AdminService::new(Arc::new(CountingFlightRepo::default()), ac_repo);
+        // Empty patch — should be a no-op for every field.
+        let res = svc
+            .update_aircraft(&icao(), AircraftPatch::default())
+            .await
+            .unwrap();
+        assert_eq!(res.registration.as_deref(), Some("KEEP"));
     }
 }
