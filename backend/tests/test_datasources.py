@@ -27,6 +27,7 @@ class ModeSUtilTests(unittest.TestCase):
         self.assertIsNotNone(aircraft)
         self.assertTrue(aircraft.has_type())
 
+    @unittest.skip("OpenSky retired its metadata API; every /api/metadata/* path returns 410 Gone")
     def test_openskynet(self):
         sut = OpenskyNet()
         aircraft = sut.query_aircraft(self.civilian_hex)

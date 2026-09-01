@@ -1,4 +1,3 @@
-from ..data.sources.metadata_sources.openskynet import OpenskyNet
 from ..data.sources.metadata_sources.hexdb_io import HexdbIo
 from ..data.sources.metadata_sources import AircraftMetadataSource
 from ..data.sources.metadata_sources.query_result import QueryResult, QueryStatus
@@ -117,9 +116,14 @@ class AirplaneCrawler:
         self._nighthawk_base_url = getattr(config, 'NIGHTHAWK_PROXY_URL', None)
 
         # Sources that are always present, always queried first.
+        # OpenskyNet is deliberately not listed: OpenSky retired its aircraft
+        # metadata API (every /api/metadata/* path now answers 410 Gone), so
+        # every query cost a logged traceback and, because a service error
+        # outranks "not found" when classifying a crawl, stopped unresolved
+        # aircraft from ever being marked not_found. The class is kept in case
+        # the API returns.
         self._static_sources: List[AircraftMetadataSource] = [
             HexdbIo(),
-            OpenskyNet(),
         ]
         self._nighthawk_sources: List[AircraftMetadataSource] = []
         self.sources: List[AircraftMetadataSource] = list(self._static_sources)
