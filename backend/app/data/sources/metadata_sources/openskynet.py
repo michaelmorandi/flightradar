@@ -11,7 +11,16 @@ logger = logging.getLogger('OpenSky')
 
 class OpenskyNet(AircraftMetadataSource):
 
-    """ Opensky-Network """
+    """ Opensky-Network
+
+    NOT WIRED INTO THE CRAWLER. OpenSky retired its aircraft metadata API:
+    every /api/metadata/* path answers 410 Gone, the endpoint was never part
+    of the documented REST API (which covers states, flights and tracks only),
+    and the map front-end that used it now sits behind a reCAPTCHA-minted
+    session. Their aircraft database is still published as a downloadable
+    dataset, so periodic bulk ingestion is the way back in. Kept as-is in case
+    the API returns.
+    """
 
     def __init__(self) -> None:
 
