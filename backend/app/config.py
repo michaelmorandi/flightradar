@@ -69,6 +69,8 @@ class Config:
 
     # Nighthawk proxy URL for aircraft metadata lookups (disabled if not set)
     NIGHTHAWK_PROXY_URL = None
+    # How often to re-discover the proxy's source list (0 disables re-discovery)
+    NIGHTHAWK_REFRESH_INTERVAL_SEC = 60
 
     # Crawler configuration
     CRAWLER_MAX_ATTEMPTS = 5  # Max retry attempts for "not found" errors
@@ -127,6 +129,7 @@ class Config:
         ENV_ADMIN_PASSWORD = 'ADMIN_PASSWORD'
         ENV_ALLOWED_ORIGINS = 'ALLOWED_ORIGINS'
         ENV_NIGHTHAWK_PROXY_URL = 'NIGHTHAWK_PROXY_URL'
+        ENV_NIGHTHAWK_REFRESH_INTERVAL_SEC = 'NIGHTHAWK_REFRESH_INTERVAL_SEC'
         ENV_CRAWLER_MAX_ATTEMPTS = 'CRAWLER_MAX_ATTEMPTS'
         ENV_CRAWLER_SERVICE_ERROR_RESET_HOURS = 'CRAWLER_SERVICE_ERROR_RESET_HOURS'
         ENV_CRAWLER_STALENESS_DAYS = 'CRAWLER_STALENESS_DAYS'
@@ -176,6 +179,11 @@ class Config:
             self.ALLOWED_ORIGINS = os.environ.get(ENV_ALLOWED_ORIGINS)
         if os.environ.get(ENV_NIGHTHAWK_PROXY_URL):
             self.NIGHTHAWK_PROXY_URL = self.sanitize_url(os.environ.get(ENV_NIGHTHAWK_PROXY_URL))
+        if os.environ.get(ENV_NIGHTHAWK_REFRESH_INTERVAL_SEC):
+            try:
+                self.NIGHTHAWK_REFRESH_INTERVAL_SEC = int(os.environ.get(ENV_NIGHTHAWK_REFRESH_INTERVAL_SEC))
+            except ValueError:
+                pass
 
         # Crawler configuration
         if os.environ.get(ENV_CRAWLER_MAX_ATTEMPTS):

@@ -2,7 +2,10 @@ from ..data.sources.metadata_sources.openskynet import OpenskyNet
 from ..data.sources.metadata_sources.hexdb_io import HexdbIo
 from ..data.sources.metadata_sources import AircraftMetadataSource
 from ..data.sources.metadata_sources.query_result import QueryResult, QueryStatus
-from ..data.sources.radar_services.nighthawk_sources import get_nighthawk_sources
+from ..data.sources.radar_services.nighthawk_sources import (
+    NighthawkDiscoveryError,
+    discover_nighthawk_sources,
+)
 from ..core.models.aircraft import Aircraft
 from ..data.repositories.aircraft_repository import AircraftRepository
 from ..data.repositories.aircraft_processing_repository import AircraftProcessingRepository
@@ -111,22 +114,75 @@ class AirplaneCrawler:
             max_reset_seconds=circuit_breaker_max_reset_sec
         )
 
-        self.sources: List[AircraftMetadataSource] = [
+        self._nighthawk_base_url = getattr(config, 'NIGHTHAWK_PROXY_URL', None)
+
+        # Sources that are always present, always queried first.
+        self._static_sources: List[AircraftMetadataSource] = [
             HexdbIo(),
             OpenskyNet(),
         ]
-
-        # Add nighthawk sources if configured (discovered from proxy, sorted by priority)
-        if config.NIGHTHAWK_PROXY_URL:
-            nighthawk_sources = get_nighthawk_sources(base_url=config.NIGHTHAWK_PROXY_URL)
-            self.sources.extend(nighthawk_sources)
-            logger.info(f"Added {len(nighthawk_sources)} nighthawk sources: {[s.name() for s in nighthawk_sources]}")
+        self._nighthawk_sources: List[AircraftMetadataSource] = []
+        self.sources: List[AircraftMetadataSource] = list(self._static_sources)
 
         # Activity tracking for admin dashboard
         self._activity_log: deque[CrawlActivity] = deque(maxlen=MAX_ACTIVITY_ENTRIES)
 
         # Volatile source enabled state (resets on restart)
         self._source_enabled: dict[str, bool] = {source.name(): True for source in self.sources}
+
+        # Discover nighthawk sources if configured. Discovery is repeated
+        # periodically (see refresh_nighthawk_sources), so a proxy that is
+        # down right now does not cost us its sources until the next restart.
+        if self._nighthawk_base_url:
+            self.refresh_nighthawk_sources()
+
+    def refresh_nighthawk_sources(self) -> bool:
+        """
+        Re-discover the sources exposed by the nighthawk proxy.
+
+        Sources the proxy adds, removes or re-prioritises are picked up
+        without restarting the backend. A discovery failure leaves the
+        current sources in place, so a briefly unreachable proxy does not
+        strip sources from an otherwise healthy crawler.
+
+        Returns:
+            True if the active source list changed.
+        """
+        if not self._nighthawk_base_url:
+            return False
+
+        try:
+            discovered = discover_nighthawk_sources(base_url=self._nighthawk_base_url)
+        except NighthawkDiscoveryError as e:
+            logger.warning(
+                f"Nighthawk source discovery failed ({e}); "
+                f"keeping {len(self._nighthawk_sources)} known source(s)"
+            )
+            return False
+
+        old_names = [s.name() for s in self._nighthawk_sources]
+        new_names = [s.name() for s in discovered]
+        if old_names == new_names:
+            logger.debug(f"Nighthawk sources unchanged: {new_names}")
+            return False
+
+        # Rebuild and rebind rather than mutate in place: a crawl running
+        # concurrently keeps iterating the list it started with, and only
+        # picks up the new one on its next cycle.
+        previously_enabled = self._source_enabled
+        new_sources = self._static_sources + discovered
+
+        self._nighthawk_sources = discovered
+        self.sources = new_sources
+        # Preserve admin toggles across a refresh; sources we have not seen
+        # before default to enabled.
+        self._source_enabled = {
+            source.name(): previously_enabled.get(source.name(), True)
+            for source in new_sources
+        }
+
+        logger.info(f"Nighthawk sources updated: {old_names or 'none'} -> {new_names or 'none'}")
+        return True
 
     def _query_aircraft_metadata(self, icao24: str) -> CrawlResult:
         """

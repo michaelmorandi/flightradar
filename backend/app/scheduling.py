@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 UPDATER_JOB_NAME = 'flight_updater_job'
 DEFAULT_CRAWLER_RUN_INTERVAL_SEC = 20
+DEFAULT_NIGHTHAWK_REFRESH_INTERVAL_SEC = 60
 
 def create_updater(config, mongodb=None):
     updater = FlightUpdaterCoordinator()
@@ -88,6 +89,23 @@ def configure_scheduling(app: FastAPI, conf: Config):
             misfire_grace_time=120,
             coalesce=True
         )
+
+        # Periodically re-discover the nighthawk proxy's source list, so sources
+        # it gains, loses or re-prioritises are picked up without a backend
+        # restart - and so a proxy that was unreachable at startup is not
+        # missing from the crawler until the next one.
+        refresh_interval = getattr(conf, 'NIGHTHAWK_REFRESH_INTERVAL_SEC',
+                                   DEFAULT_NIGHTHAWK_REFRESH_INTERVAL_SEC)
+        if conf.NIGHTHAWK_PROXY_URL and refresh_interval > 0:
+            logger.info(f"Scheduling nighthawk source discovery job (every {refresh_interval} seconds)...")
+            scheduler.add_job(
+                id='nighthawk_source_refresh',
+                func=lambda: app.state.crawler.refresh_nighthawk_sources(),
+                trigger='interval',
+                seconds=refresh_interval,
+                misfire_grace_time=refresh_interval,
+                coalesce=True
+            )
     else:
         logger.info("Unknown aircraft crawling disabled")
 
