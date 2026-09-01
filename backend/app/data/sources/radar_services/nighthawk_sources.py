@@ -120,7 +120,11 @@ class NighthawkSource(AircraftMetadataSource):
         return result.aircraft
 
 
-def get_nighthawk_sources(base_url: str) -> List[AircraftMetadataSource]:
+class NighthawkDiscoveryError(Exception):
+    """Raised when the nighthawk proxy's source list cannot be retrieved."""
+
+
+def discover_nighthawk_sources(base_url: str) -> List[AircraftMetadataSource]:
     """
     Discover and return all available sources from nighthawk proxy.
 
@@ -128,40 +132,70 @@ def get_nighthawk_sources(base_url: str) -> List[AircraftMetadataSource]:
     creates source instances, and returns them sorted by priority
     (lower priority number = higher precedence).
 
+    An empty result means the proxy answered but currently exposes no
+    sources. That is deliberately distinct from being unable to ask it at
+    all, which raises, so callers refreshing periodically can keep the
+    sources they already know about when the proxy is briefly unreachable.
+
     Args:
         base_url: The nighthawk proxy base URL
 
     Returns:
         List of AircraftMetadataSource instances sorted by priority
-    """
-    sources = []
 
+    Raises:
+        NighthawkDiscoveryError: If the proxy cannot be reached or returns
+            an unusable response.
+    """
     try:
         response = requests.get(
             f"{base_url.rstrip('/')}/sources",
             timeout=10,
             headers={"Accept": "application/json"}
         )
-
-        if response.status_code == 200:
-            data = response.json()
-            for source_info in data.get("sources", []):
-                source_name = source_info.get("name")
-                priority = source_info.get("priority", 100)
-                if source_name:
-                    sources.append(NighthawkSource(
-                        base_url=base_url,
-                        source_endpoint=source_name,
-                        priority=priority
-                    ))
-                    logger.info(f"Discovered nighthawk source: {source_name} (priority={priority})")
-
-            # Sort by priority (lower number = higher precedence)
-            sources.sort(key=lambda s: s.priority)
-        else:
-            logger.warning(f"Failed to discover nighthawk sources: HTTP {response.status_code}")
-
+    except (Timeout, ConnectionError) as e:
+        raise NighthawkDiscoveryError(f"could not reach {base_url}: {e}") from e
     except Exception as e:
-        logger.warning(f"Failed to discover nighthawk sources: {e}")
+        raise NighthawkDiscoveryError(f"unexpected error querying {base_url}: {e}") from e
 
+    if response.status_code != requests.codes.ok:
+        raise NighthawkDiscoveryError(f"{base_url} returned HTTP {response.status_code}")
+
+    try:
+        data = response.json()
+    except ValueError as e:
+        raise NighthawkDiscoveryError(f"{base_url} returned invalid JSON: {e}") from e
+
+    if not isinstance(data, dict):
+        raise NighthawkDiscoveryError(f"{base_url} returned unexpected payload type {type(data).__name__}")
+
+    sources = []
+    for source_info in data.get("sources", []):
+        if not isinstance(source_info, dict):
+            continue
+        source_name = source_info.get("name")
+        priority = source_info.get("priority", 100)
+        if source_name:
+            sources.append(NighthawkSource(
+                base_url=base_url,
+                source_endpoint=source_name,
+                priority=priority
+            ))
+            logger.debug(f"Discovered nighthawk source: {source_name} (priority={priority})")
+
+    # Sort by priority (lower number = higher precedence)
+    sources.sort(key=lambda s: s.priority)
     return sources
+
+
+def get_nighthawk_sources(base_url: str) -> List[AircraftMetadataSource]:
+    """
+    Discover sources from the nighthawk proxy, never raising.
+
+    Returns an empty list if the proxy could not be queried.
+    """
+    try:
+        return discover_nighthawk_sources(base_url)
+    except NighthawkDiscoveryError as e:
+        logger.warning(f"Failed to discover nighthawk sources: {e}")
+        return []
