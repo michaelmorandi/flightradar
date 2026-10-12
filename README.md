@@ -1,6 +1,39 @@
-# Flightradar Monorepo
+# Flightradar
 
-This monorepo contains both the frontend and backend applications for the Flightradar system.
+A self-hosted flight tracker for your own ADS-B receiver. Flightradar takes the raw signals your antenna picks up, works out which aircraft they belong to, and shows them live on a map in your browser, much like the big commercial flight tracking sites but running on your own data and hardware.
+
+![Flightradar live map with an aircraft selected](docs/screenshot.png)
+
+## What it does
+
+**Live map**
+- Shows every aircraft your receiver can hear on a dark map, with icons that match the aircraft type (airliner, business jet, helicopter, balloon and so on) and point in the direction of travel.
+- Updates continuously over a live stream, with smooth movement between position reports instead of jumpy markers.
+- Click an aircraft to see its track drawn behind it, colored by altitude from red near the ground through green and blue up to violet at cruising level.
+
+**Flight details**
+- Callsign, route (e.g. `ZRH → TLV`), registration, 24-bit ICAO address, aircraft type and operator, plus current altitude and ground speed.
+- A silhouette of the aircraft type and the airline's logo where one is available.
+
+**Search and filters**
+- Search for live flights by callsign or airline.
+- A toggleable list of all aircraft currently in view.
+- A military filter that highlights military aircraft or shows only them.
+
+**History**
+- A flight log of past flights with a small map of each track, which you can open to replay the full route.
+- An airlines view that groups recorded flights by operator.
+- Old data is cleaned up automatically after a retention period you choose.
+
+**Aircraft data enrichment**
+- When an aircraft isn't in the local database, a background crawler looks up its registration, type and operator in several public sources and stores the result, so the details fill in by themselves over time.
+
+**Admin dashboard**
+- Shows statistics and the crawler's activity, lets you turn individual lookup sources on or off, and lets you correct aircraft records by hand.
+
+**Data sources and deployment**
+- Works with dump1090, Virtual Radar Server or a gRPC ADS-B feed.
+- Ships as a single Docker image (Vue frontend and FastAPI backend, with MongoDB for storage), works on desktop and mobile, and has a documented REST API.
 
 ## Structure
 
