@@ -19,7 +19,7 @@ ENV VITE_UMAMI_ID='${VITE_UMAMI_ID}'
 RUN npm run build
 
 # Stage 2: Production image
-FROM python:3-alpine
+FROM python:3.15-alpine
 
 LABEL maintainer="Michael Morandi"
 

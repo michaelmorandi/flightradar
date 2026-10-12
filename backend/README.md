@@ -12,10 +12,10 @@ A FastAPI-based backend for tracking and managing real-time ADS-B flight data wi
 
 ## Prerequisites
 
-1. **Python 3.11+** - Required for the application
+1. **Python 3.15+** - Required for the application
 2. **UV Package Manager** - [Install UV](https://docs.astral.sh/uv/getting-started/installation/)
 3. **MongoDB** - Database for flight and position data
-4. **ADS-B Data Source** - dump1090 or Virtual Radar Server
+4. **ADS-B Data Source** - dump1090, Virtual Radar Server or a gRPC ADS-B feed
 5. **MongoDB Integration** A MongoDB server to store flight data
 
 ## Getting Started
@@ -34,7 +34,7 @@ Set the required environment variables:
 export MONGODB_URI="mongodb://localhost:27017/"
 export MONGODB_DB_NAME="flightradar"
 export SERVICE_URL="http://your-radar-server:8080"
-export SERVICE_TYPE="dump1090"  # or "vrs"
+export SERVICE_TYPE="dump1090"  # or "vrs", "grpc"
 ```
 
 Or create a `.env` file in the backend directory:
@@ -78,7 +78,7 @@ Note: This application reads configuration only from environment variables or a 
 | Option (env var) | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `SERVICE_URL` | yes | - | URL to your radar service |
-| `SERVICE_TYPE` | no | `vrs` | Service type: `vrs` or `dump1090` |
+| `SERVICE_TYPE` | no | `vrs` | Service type: `vrs`, `dump1090` or `grpc` |
 | `DATA_FOLDER` | no | `resources` | Path to resources folder |
 | `MIL_ONLY` | no | `false` | Filter non-military aircraft |
 

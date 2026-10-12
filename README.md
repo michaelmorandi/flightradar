@@ -106,6 +106,9 @@ Configure the application using environment variables:
 For development, run the frontend and backend separately using their respective dev servers:
 
 ### Backend Development
+
+Requires Python 3.15 or newer (set in `backend/pyproject.toml`; `uv` downloads it automatically if missing).
+
 ```bash
 cd backend
 uv sync

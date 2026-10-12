@@ -12,7 +12,7 @@ class RadarServiceFactory:
         if config.RADAR_SERVICE_TYPE == 'vrs':
             logger.info(f"Connecting to VirtualRadarServer at {config.RADAR_SERVICE_URL}")
             return VirtualRadarServer(config.RADAR_SERVICE_URL)
-        elif config.RADAR_SERVICE_TYPE == 'dmp1090':
+        elif config.RADAR_SERVICE_TYPE == 'dump1090':
             logger.info(f"Connecting to dump1090 at {config.RADAR_SERVICE_URL}")
             return Dump1090(config.RADAR_SERVICE_URL)
         elif config.RADAR_SERVICE_TYPE == 'grpc':
